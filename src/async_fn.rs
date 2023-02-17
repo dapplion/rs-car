@@ -34,7 +34,7 @@ pub async fn decode_car<R: AsyncRead + Unpin>(r: &mut R) -> Result<(), CarDecode
             Err(err) => return Err(err),
         };
 
-        println!("block {:?} {:?}", cid, block);
+        println!("block {:?} read_bytes {}", cid, read_bytes);
 
         read_bytes += block_len;
         if let StreamEnd::AfterNBytes(blocks_len) = header.eof_stream {

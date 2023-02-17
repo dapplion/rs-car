@@ -2,7 +2,7 @@ use asynchronous_codec::Framed;
 use std::io::{BufRead, BufReader, Read};
 use unsigned_varint;
 
-mod async_fn;
+pub mod async_fn;
 mod carv1_header;
 mod carv2_header;
 mod cid;

@@ -1,5 +1,7 @@
 use std::io;
 
+use cid::Cid;
+
 #[derive(Debug)]
 pub enum CarDecodeError {
     InvalidCarV1Header(String),
@@ -7,10 +9,16 @@ pub enum CarDecodeError {
     InvalidCid(String),
     InvalidBlockHeader(String),
     BlockDigestMismatch(String),
-    UnsupportedHashCode { code: u64 },
+    UnsupportedHashCode((HashCode, Cid)),
     BlockStartEOF,
     UnsupportedCarVersion { version: u64 },
     IoError(io::Error),
+}
+
+#[derive(Debug)]
+pub enum HashCode {
+    Name(multicodec::Codec),
+    Code(u64),
 }
 
 impl std::fmt::Display for CarDecodeError {

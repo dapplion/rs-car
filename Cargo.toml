@@ -23,6 +23,8 @@ multibase = "0.9.1"
 multihash = "0.18.0"
 libipld-cbor = "0.16.0"
 sha2 = "0.10.6"
+multicodec = "0.1.0"
+blake2b_simd = "1.0.1"
 
 [dev-dependencies]
 quickcheck = "1.0.3"

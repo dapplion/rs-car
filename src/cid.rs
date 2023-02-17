@@ -1,11 +1,17 @@
+use blake2b_simd::{Hash, Params};
 use cid::Cid;
 use futures::{AsyncRead, AsyncReadExt};
+use multicodec::Codec;
 use multihash::MultihashGeneric;
 use sha2::{Digest, Sha256};
 
-use crate::{error::CarDecodeError, varint::read_varint_u64};
+use crate::{
+    error::{CarDecodeError, HashCode},
+    varint::read_varint_u64,
+};
 
 const CODE_SHA2_256: u64 = 0x12;
+const CODE_BLAKE2B_256: u64 = 0xb220;
 const DIGEST_SIZE: usize = 64;
 
 pub(crate) async fn read_block_cid<R: AsyncRead + Unpin>(
@@ -68,27 +74,48 @@ async fn read_multihash<R: AsyncRead + Unpin>(
 }
 
 pub(crate) fn assert_block_cid(cid: &Cid, block: &[u8]) -> Result<(), CarDecodeError> {
-    match cid.hash().code() {
-        CODE_SHA2_256 => {
-            let mut hasher = Sha256::new();
-            hasher.update(block);
-            let block_digest = hasher.finalize();
-            let cid_digest = cid.hash().digest();
-
-            // TODO: Remove need to copy on .to_vec()
-            if cid_digest != block_digest.to_vec() {
-                return Err(CarDecodeError::BlockDigestMismatch(format!(
-                    "sha2-256 digest mismatch cid {:?} cid digest {} block digest {}",
-                    cid,
-                    hex::encode(cid_digest),
-                    hex::encode(block_digest)
-                )));
-            }
+    let block_digest = match cid.hash().code() {
+        CODE_SHA2_256 => hash_sha2_256(block),
+        CODE_BLAKE2B_256 => hash_blake2b_256(block),
+        code => {
+            let code = match Codec::from_code(code as u16) {
+                Ok(code) => HashCode::Name(code),
+                Err(_) => HashCode::Code(code),
+            };
+            return Err(CarDecodeError::UnsupportedHashCode((code, cid.clone())));
         }
-        code => return Err(CarDecodeError::UnsupportedHashCode { code }),
     };
 
+    let cid_digest = cid.hash().digest();
+
+    // TODO: Remove need to copy on .to_vec()
+    if cid_digest != block_digest.to_vec() {
+        return Err(CarDecodeError::BlockDigestMismatch(format!(
+            "sha2-256 digest mismatch cid {:?} cid digest {} block digest {}",
+            cid,
+            hex::encode(cid_digest),
+            hex::encode(block_digest)
+        )));
+    }
+
     Ok(())
+}
+
+fn hash_sha2_256(data: &[u8]) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(data);
+    hasher.finalize().into()
+}
+
+fn hash_blake2b_256(data: &[u8]) -> [u8; 32] {
+    Params::new()
+        .hash_length(32)
+        .to_state()
+        .update(data)
+        .finalize()
+        .as_bytes()
+        .try_into()
+        .unwrap()
 }
 
 #[cfg(test)]
