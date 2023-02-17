@@ -21,3 +21,9 @@ cid = "0.10.1"
 libipld = "0.16.0"
 multibase = "0.9.1"
 multihash = "0.18.0"
+libipld-cbor = "0.16.0"
+sha2 = "0.10.6"
+
+[dev-dependencies]
+quickcheck = "1.0.3"
+quickcheck_macros = "1.0.0"
