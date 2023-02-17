@@ -1,11 +1,23 @@
-use asynchronous_codec::Framed;
-use std::io::{BufRead, BufReader, Read};
-use unsigned_varint;
+use cid::Cid;
+use futures::AsyncRead;
+use futures::FutureExt;
+use futures::Stream;
+use futures::StreamExt;
+use std::task::ready;
+use std::task::{Context, Poll};
 
-pub mod async_fn;
+use crate::block_cid::assert_block_cid;
+use crate::car_block::decode_block;
+use crate::car_header::read_car_header;
+use crate::car_header::CarHeader;
+use crate::car_header::StreamEnd;
+use crate::error::CarDecodeError;
+
+mod block_cid;
+mod car_block;
+mod car_header;
 mod carv1_header;
 mod carv2_header;
-mod cid;
 mod codec;
 mod error;
 mod varint;
@@ -20,7 +32,6 @@ mod varint;
 ///
 /// ## Header
 /// First
-pub fn read_carv1<R: Read>(buf_reader: BufReader<R>) {}
 
 /// CARv2 consists of:
 /// - 11-byte pragma
@@ -33,23 +44,89 @@ pub fn read_carv1<R: Read>(buf_reader: BufReader<R>) {}
 /// ```
 ///
 
+struct CarDecodeBlockStreamer<'a, R> {
+    r: &'a mut R,
+    header: CarHeader,
+    read_bytes: usize,
+}
+
+impl<'a, R> Stream for CarDecodeBlockStreamer<'a, R>
+where
+    R: AsyncRead + Unpin,
+{
+    type Item = Result<(Cid, Vec<u8>), CarDecodeError>;
+
+    fn poll_next(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Self::Item>> {
+        let decode_block_res = ready!(Box::pin(decode_block(self.r)).poll_unpin(cx));
+        let (cid, block, block_len) = match decode_block_res {
+            Ok(data) => data,
+            Err(CarDecodeError::BlockStartEOF)
+                if self.header.eof_stream == StreamEnd::OnBlockEOF =>
+            {
+                return Poll::Ready(None)
+            }
+            Err(err) => return Poll::Ready(Some(Err(err))),
+        };
+
+        println!("block {:?} read_bytes {}", cid, self.read_bytes);
+
+        self.read_bytes += block_len;
+        if let StreamEnd::AfterNBytes(blocks_len) = self.header.eof_stream {
+            if self.read_bytes >= blocks_len {
+                return Poll::Ready(None);
+            }
+        }
+
+        // TODO: Should this be done always? And here?
+        assert_block_cid(&cid, &block)?;
+
+        Poll::Ready(Some(Ok((cid, block))))
+    }
+}
+
+impl<'a, R> CarDecodeBlockStreamer<'a, R>
+where
+    R: AsyncRead + Unpin,
+{
+    pub async fn new(r: &'a mut R) -> Result<CarDecodeBlockStreamer<'a, R>, CarDecodeError> {
+        let header = read_car_header(r).await?;
+        return Ok(CarDecodeBlockStreamer {
+            r,
+            header,
+            read_bytes: 0,
+        });
+    }
+}
+
+pub async fn decode_car<R: AsyncRead + Unpin>(
+    r: &mut R,
+) -> Result<Vec<(Cid, Vec<u8>)>, CarDecodeError> {
+    let mut decoder = CarDecodeBlockStreamer::new(r).await?;
+    let mut items: Vec<(Cid, Vec<u8>)> = vec![];
+
+    while let Some(item) = decoder.next().await {
+        let item = item?;
+        println!("block {:?}", item);
+        items.push(item);
+    }
+
+    Ok(items)
+}
+
 #[cfg(test)]
 mod tests {
-    use asynchronous_codec::FramedRead;
-
-    use crate::async_fn::decode_car;
-    use crate::codec::CARv1Codec;
-
     use super::*;
-    use futures::{Stream, StreamExt};
-    use std::fs;
-    use std::io::prelude::*;
-    use std::io::BufReader;
+    use crate::codec::CARv1Codec;
+    use asynchronous_codec::FramedRead;
+    use futures::StreamExt;
 
     #[tokio::test]
     async fn open_car_v1_framed() {
         let car_filepath = "./testdata/helloworld.car";
-        let mut file = async_std::fs::File::open(car_filepath).await.unwrap();
+        let file = async_std::fs::File::open(car_filepath).await.unwrap();
         let mut file_framed = FramedRead::new(file, CARv1Codec::new());
 
         // Trigger reading all stream

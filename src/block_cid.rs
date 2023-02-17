@@ -1,4 +1,4 @@
-use blake2b_simd::{Hash, Params};
+use blake2b_simd::Params;
 use cid::Cid;
 use futures::{AsyncRead, AsyncReadExt};
 use multicodec::Codec;
@@ -123,7 +123,7 @@ mod tests {
     use std::io;
 
     use super::{assert_block_cid, read_block_cid, read_multihash};
-    use crate::{cid::CODE_SHA2_256, error::CarDecodeError};
+    use crate::{block_cid::CODE_SHA2_256, error::CarDecodeError};
     use cid::Cid;
     use futures::executor;
     use futures::io::Cursor;

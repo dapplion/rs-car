@@ -1,14 +1,8 @@
-use asynchronous_codec::{Decoder, Encoder};
-use bytes::{BufMut, Bytes, BytesMut};
+use asynchronous_codec::Decoder;
+use bytes::BytesMut;
 use cid::Cid;
-use libipld;
-use multibase;
-use std::{
-    fmt,
-    hash::{Hash, Hasher},
-    io, mem,
-};
-use unsigned_varint::{codec, encode};
+use std::io;
+use unsigned_varint::codec;
 
 pub struct CARv1Codec {
     varint_decoder: codec::Uvi<u64>,
@@ -204,5 +198,3 @@ impl Decoder for CARv1Codec {
     //     };
     // }
 }
-
-fn decode_cid(buf: BytesMut) {}
