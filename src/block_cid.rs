@@ -74,9 +74,9 @@ async fn read_multihash<R: AsyncRead + Unpin>(
 }
 
 pub(crate) fn assert_block_cid(cid: &Cid, block: &[u8]) -> Result<(), CarDecodeError> {
-    let block_digest = match cid.hash().code() {
-        CODE_SHA2_256 => hash_sha2_256(block),
-        CODE_BLAKE2B_256 => hash_blake2b_256(block),
+    let (hash_fn_name, block_digest) = match cid.hash().code() {
+        CODE_SHA2_256 => ("sha2-256", hash_sha2_256(block)),
+        CODE_BLAKE2B_256 => ("blake2b-256", hash_blake2b_256(block)),
         code => {
             let code = match Codec::from_code(code as u16) {
                 Ok(code) => HashCode::Name(code),
@@ -91,7 +91,8 @@ pub(crate) fn assert_block_cid(cid: &Cid, block: &[u8]) -> Result<(), CarDecodeE
     // TODO: Remove need to copy on .to_vec()
     if cid_digest != block_digest.to_vec() {
         return Err(CarDecodeError::BlockDigestMismatch(format!(
-            "sha2-256 digest mismatch cid {:?} cid digest {} block digest {}",
+            "{} digest mismatch cid {:?} cid digest {} block digest {}",
+            hash_fn_name,
             cid,
             hex::encode(cid_digest),
             hex::encode(block_digest)

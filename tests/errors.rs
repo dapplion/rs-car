@@ -7,13 +7,24 @@ enum TestResult {
     Success(&'static str),
 }
 
+#[derive(PartialEq)]
+enum TestOptions {
+    None,
+    SkipValidateBlockHash,
+}
+
 macro_rules! load_file_test {
-    ($name:ident, $car_hex:expr, $expected:expr) => {
+    ($name:ident, $car_hex:expr, $expected:expr, $opts:expr) => {
         #[tokio::test]
         async fn $name() {
             let result = std::panic::catch_unwind(|| {
-                let mut input = Cursor::new(hex::decode($car_hex).unwrap());
-                futures::executor::block_on(decode_car(&mut input))
+                let validate_block_hash = match $opts {
+                    TestOptions::None => true,
+                    TestOptions::SkipValidateBlockHash => false,
+                };
+
+                let mut input = Cursor::new(hex::decode($car_hex.replace(" ", "")).unwrap());
+                futures::executor::block_on(decode_car(&mut input, validate_block_hash))
             });
 
             match result {
@@ -42,20 +53,42 @@ macro_rules! load_file_test {
     };
 }
 
-load_file_test!(bad_cid_v0, "3aa265726f6f747381d8305825000130302030303030303030303030303030303030303030303030303030303030303030306776657273696f6e010130", TestResult::Error("InvalidCarV1Header(\"header cbor codec error: Unknown cbor tag `48`.\")"));
+load_file_test!(bad_cid_v0, "3aa265726f6f747381d8305825000130302030303030303030303030303030303030303030303030303030303030303030306776657273696f6e010130", TestResult::Error("InvalidCarV1Header(\"header cbor codec error: Unknown cbor tag `48`.\")"), TestOptions::None);
+
 load_file_test!(
     bad_header_length,
     "e0e0e0e0a7060c6f6c4cca943c236f4b196723489608edb42a8b8fa80b6776657273696f6e19",
-    TestResult::Error("InvalidCarV1Header(\"header len too big 216830324832\")")
+    TestResult::Error("InvalidCarV1Header(\"header len too big 216830324832\")"),
+    TestOptions::None
 );
-load_file_test!(bad_section_length_1, "11a265726f6f7473806776657273696f6e01e0e0e0e0a7060155122001d448afd928065458cf670b60f5a594d735af0172c8d67f22a81680132681ca00000000000000000000", TestResult::Error("InvalidBlockHeader(\"block len too big 216830324832\")"));
-load_file_test!(bad_section_length_2, "3aa265726f6f747381d8305825000130302030303030303030303030303030303030303030303030303030303030303030306776657273696f6e01200130302030303030303030303030303030303030303030303030303030303030303030303030303030303030", TestResult::Error("section length shorter than CID length"));
+load_file_test!(bad_section_length_1, "11a265726f6f7473806776657273696f6e01e0e0e0e0a7060155122001d448afd928065458cf670b60f5a594d735af0172c8d67f22a81680132681ca00000000000000000000", TestResult::Error("InvalidBlockHeader(\"block len too big 216830324832\")"), TestOptions::None);
+
+load_file_test!(bad_section_length_2, "3aa265726f6f747381d8305825000130302030303030303030303030303030303030303030303030303030303030303030306776657273696f6e01200130302030303030303030303030303030303030303030303030303030303030303030303030303030303030", TestResult::Error("InvalidCarV1Header(\"header cbor codec error: Unknown cbor tag `48`.\")"), TestOptions::None);
+
 load_file_test!(
     bad_section_length_3,
     "11a265726f6f7473f66776657273696f6e0180",
-    TestResult::Error("unexpected EOF")
+    TestResult::Error("InvalidCarV1Header(\"roots key expected cbor List but got Null\")"),
+    TestOptions::None
 );
-load_file_test!(bad_block_hash_sanity_check, "11a265726f6f7473806776657273696f6e 012e0155122001d448afd928065458cf670b60f5a594d735af0172c8d67f22a81680132681ca ffffffffffffffffffff", TestResult::Success(""));
 
-load_file_test!(bad_block_hash, "11a265726f6f7473806776657273696f6e 012e0155122001d448afd928065458cf670b60f5a594d735af0172c8d67f22a81680132681ca ffffffffffffffffffff", TestResult::Error("mismatch in content integrity, expected: bafkreiab2rek7wjiazkfrt3hbnqpljmu24226alszdlh6ivic2abgjubzi, got: bafkreiaaqoxrddiyuy6gxnks6ioqytxhq5a7tchm2mm5htigznwiljukmm"));
-load_file_test!(identity_cid, "2f a265726f6f747381d82a581a0001a90200147b226964656e74697479223a22626c6f636b227d6776657273696f6e01 19 01a90200147b226964656e74697479223a22626c6f636b227d", TestResult::Error("mismatch in content integrity, expected: baguqeaaupmrgszdfnz2gs5dzei5ceytmn5rwwit5, got: baguqeaaa"));
+// this should pass because we don't ask the CID be validated even though it doesn't match
+load_file_test!(
+    bad_block_hash_skip_verify, 
+//   header                             cid                                                                          data
+    "11a265726f6f7473806776657273696f6e 012e0155122001d448afd928065458cf670b60f5a594d735af0172c8d67f22a81680132681ca ffffffffffffffffffff",
+    TestResult::Success(""),
+    TestOptions::SkipValidateBlockHash
+);
+
+// same as above, but we ask for CID validation
+load_file_test!(bad_block_hash_do_verify, "11a265726f6f7473806776657273696f6e 012e0155122001d448afd928065458cf670b60f5a594d735af0172c8d67f22a81680132681ca ffffffffffffffffffff", TestResult::Error("BlockDigestMismatch(\"sha2-256 digest mismatch cid Cid(bafkreiab2rek7wjiazkfrt3hbnqpljmu24226alszdlh6ivic2abgjubzi) cid digest 01d448afd928065458cf670b60f5a594d735af0172c8d67f22a81680132681ca block digest 0083af118d18a63c6bb552f21d0c4ee78741f988ecd319d3cd06cb6c85a68a63\")"), TestOptions::None);
+
+// a case where this _could_ be a valid CAR if we allowed identity CIDs and not matching block contents to exist, there's no block bytes in this
+load_file_test!(
+    identity_cid,
+//   47 {version:1,roots:[identity cid]}                                                               25 identity cid (dag-json {"identity":"block"})
+    "2f a265726f6f747381d82a581a0001a90200147b226964656e74697479223a22626c6f636b227d6776657273696f6e01 19 01a90200147b226964656e74697479223a22626c6f636b227d",
+    TestResult::Error("mismatch in content integrity, expected: baguqeaaupmrgszdfnz2gs5dzei5ceytmn5rwwit5, got: baguqeaaa"),
+    TestOptions::None
+);

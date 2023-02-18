@@ -48,6 +48,7 @@ struct CarDecodeBlockStreamer<'a, R> {
     r: &'a mut R,
     header: CarHeader,
     read_bytes: usize,
+    validate_block_hash: bool,
 }
 
 impl<'a, R> Stream for CarDecodeBlockStreamer<'a, R>
@@ -81,7 +82,9 @@ where
         }
 
         // TODO: Should this be done always? And here?
-        assert_block_cid(&cid, &block)?;
+        if self.validate_block_hash {
+            assert_block_cid(&cid, &block)?;
+        }
 
         Poll::Ready(Some(Ok((cid, block))))
     }
@@ -91,20 +94,25 @@ impl<'a, R> CarDecodeBlockStreamer<'a, R>
 where
     R: AsyncRead + Unpin,
 {
-    pub async fn new(r: &'a mut R) -> Result<CarDecodeBlockStreamer<'a, R>, CarDecodeError> {
+    pub async fn new(
+        r: &'a mut R,
+        validate_block_hash: bool,
+    ) -> Result<CarDecodeBlockStreamer<'a, R>, CarDecodeError> {
         let header = read_car_header(r).await?;
         return Ok(CarDecodeBlockStreamer {
             r,
             header,
             read_bytes: 0,
+            validate_block_hash,
         });
     }
 }
 
 pub async fn decode_car<R: AsyncRead + Unpin>(
     r: &mut R,
+    validate_block_hash: bool,
 ) -> Result<Vec<(Cid, Vec<u8>)>, CarDecodeError> {
-    let mut decoder = CarDecodeBlockStreamer::new(r).await?;
+    let mut decoder = CarDecodeBlockStreamer::new(r, validate_block_hash).await?;
     let mut items: Vec<(Cid, Vec<u8>)> = vec![];
 
     while let Some(item) = decoder.next().await {
@@ -148,14 +156,14 @@ mod tests {
     async fn decode_carv1_helloworld() {
         let car_filepath = "./testdata/helloworld.car";
         let mut file = async_std::fs::File::open(car_filepath).await.unwrap();
-        decode_car(&mut file).await.unwrap();
+        decode_car(&mut file, true).await.unwrap();
     }
 
     #[tokio::test]
     async fn decode_carv1_carv1_basic() {
         let car_filepath = "./testdata/carv1-basic.car";
         let mut file = async_std::fs::File::open(car_filepath).await.unwrap();
-        decode_car(&mut file).await.unwrap();
+        decode_car(&mut file, true).await.unwrap();
     }
 
     #[tokio::test]
@@ -190,6 +198,6 @@ mod tests {
         // 903d84efdadf1ba3cd678e6475b1a232f83900000000000000
         let car_filepath = "./testdata/carv2-basic.car";
         let mut file = async_std::fs::File::open(car_filepath).await.unwrap();
-        decode_car(&mut file).await.unwrap();
+        decode_car(&mut file, true).await.unwrap();
     }
 }

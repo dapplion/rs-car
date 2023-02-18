@@ -16,7 +16,7 @@ macro_rules! load_file_test {
             let result = std::panic::catch_unwind(|| {
                 let mut file =
                     futures::executor::block_on(async_std::fs::File::open($file)).unwrap();
-                futures::executor::block_on(decode_car(&mut file))
+                futures::executor::block_on(decode_car(&mut file, true))
             });
 
             match result {
@@ -128,7 +128,7 @@ async fn test_fixtures() {
 
         println!("Test {}", filename);
 
-        match decode_car(&mut file).await {
+        match decode_car(&mut file, true).await {
             Ok(res) => println!("Ok {}: {:?}", filename, res),
             Err(err) => println!("Err {}: {:?}", filename, err),
         }
