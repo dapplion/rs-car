@@ -10,6 +10,11 @@ use crate::carv2_header::CARV2_PRAGMA_SIZE;
 use crate::error::CarDecodeError;
 use crate::varint::read_varint_u64;
 
+/// Arbitrary high value to prevent big allocations
+const MAX_HEADER_LEN: u64 = 1048576;
+/// Arbitrary high value to prevent big allocations
+const MAX_PADDING_LEN: usize = 1073741824;
+
 #[derive(Debug, PartialEq)]
 pub(crate) enum StreamEnd {
     AfterNBytes(usize),
@@ -67,6 +72,13 @@ async fn read_carv1_header<R: AsyncRead + Unpin>(
                 "invalid header varint".to_string(),
             ))?;
 
+    if header_len > MAX_HEADER_LEN {
+        return Err(CarDecodeError::InvalidCarV1Header(format!(
+            "header len too big {}",
+            header_len
+        )));
+    }
+
     let mut header_buf = vec![0u8; header_len as usize];
     src.read_exact(&mut header_buf).await?;
 
@@ -86,6 +98,12 @@ async fn read_carv2_header<R: AsyncRead + Unpin>(
     // Read padding, and throw away
     let padding_len = header_v2.data_offset as usize - CARV2_PRAGMA_SIZE - CARV2_HEADER_SIZE;
     if padding_len > 0 {
+        if padding_len > MAX_PADDING_LEN {
+            return Err(CarDecodeError::InvalidCarV1Header(format!(
+                "padding len too big {}",
+                padding_len
+            )));
+        }
         let mut padding_buf = vec![0u8; padding_len as usize];
         r.read_exact(&mut padding_buf).await?;
     }

@@ -5,6 +5,7 @@ use cid::Cid;
 #[derive(Debug)]
 pub enum CarDecodeError {
     InvalidCarV1Header(String),
+    InvalidCarV2Header(String),
     InvalidMultihash(String),
     InvalidCid(String),
     InvalidBlockHeader(String),

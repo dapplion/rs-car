@@ -4,6 +4,9 @@ use std::io;
 
 use crate::{block_cid::read_block_cid, error::CarDecodeError, varint::read_varint_u64};
 
+/// Arbitrary high value to prevent big allocations
+const MAX_BLOCK_LEN: u64 = 1073741824;
+
 /// # Returns
 ///
 /// (cid, block buffer, total block byte length including varint)
@@ -40,6 +43,13 @@ async fn decode_block_header<R: AsyncRead + Unpin>(
         return Err(CarDecodeError::InvalidBlockHeader(
             "zero length".to_string(),
         ));
+    }
+
+    if len > MAX_BLOCK_LEN {
+        return Err(CarDecodeError::InvalidBlockHeader(format!(
+            "block len too big {}",
+            len
+        )));
     }
 
     let cid = read_block_cid(src).await?;
