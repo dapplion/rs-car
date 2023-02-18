@@ -19,7 +19,7 @@ mod car_header;
 mod carv1_header;
 mod carv2_header;
 mod codec;
-mod error;
+pub mod error;
 mod varint;
 
 /// CARv1 consists of:
