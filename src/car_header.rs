@@ -22,7 +22,7 @@ pub(crate) enum StreamEnd {
 }
 
 #[derive(Debug)]
-pub(crate) struct CarHeader {
+pub struct CarHeader {
     pub(crate) header_v1: CarV1Header,
     pub(crate) header_v2: Option<CarV2Header>,
     pub(crate) eof_stream: StreamEnd,
