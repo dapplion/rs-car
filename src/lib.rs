@@ -48,82 +48,59 @@ mod varint;
 ///
 
 struct CarDecodeBlockStreamer<'a, R> {
-    r: &'a mut R,
+    // r: &'a mut R,
     pub header: CarHeader,
     pub read_bytes: usize,
     validate_block_hash: bool,
-    decode_header_future: Mutex<Option<DecodeBlockFuture>>,
+    decode_header_future: Option<DecodeBlockFuture<'a, R>>,
 }
 
-type DecodeBlockFuture = BoxFuture<'static, Result<(Cid, Vec<u8>, usize), CarDecodeError>>;
+type DecodeBlockFuture<'a, R> =
+    BoxFuture<'a, Result<(&'a mut R, Cid, Vec<u8>, usize), CarDecodeError>>;
 
 impl<'a, R> Stream for CarDecodeBlockStreamer<'a, R>
 where
-    R: AsyncRead + Send + Unpin,
+    R: AsyncRead + Send + Unpin + 'a,
 {
     type Item = Result<(Cid, Vec<u8>), CarDecodeError>;
 
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        // let me = &mut *self;
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let me = Pin::into_inner(self);
 
-        loop {
-            let decode_header_future = self.decode_header_future.lock().poll_unpin(cx);
-            match decode_header_future {
-                //     Some(mut decode_header_future) => match decode_header_future.poll_unpin(cx) {
-                //         Poll::Pending => {
-                //             me.decode_header_future = Some(decode_header_future);
-                //             return Poll::Pending;
-                //         }
-                //         Poll::Ready(_) => {}
-                //     },
-
-                //     None => {
-                //         let fut = decode_block(&mut me.r);
-                //         me.decode_header_future = Some(fut.boxed())
-                //     }
-                // }
-                Some(mut decode_header_future) => {
-                    match decode_header_future.poll_unpin(cx) {
-                        Poll::Pending => {
-                            self.decode_header_future = Some(decode_header_future);
-                            return Poll::Pending;
+        match &mut me.decode_header_future {
+            Some(decode_future) => match decode_future.as_mut().poll(cx) {
+                Poll::Pending => Poll::Pending,
+                Poll::Ready(Ok((r, cid, block, block_len))) => {
+                    if let StreamEnd::AfterNBytes(blocks_len) = me.header.eof_stream {
+                        if me.read_bytes >= blocks_len {
+                            return Poll::Ready(None);
                         }
-                        Poll::Ready(Err(CarDecodeError::BlockStartEOF))
-                            if self.header.eof_stream == StreamEnd::OnBlockEOF =>
-                        {
-                            return Poll::Ready(None)
-                        }
-                        Poll::Ready(Err(err)) => return Poll::Ready(Some(Err(err))),
-                        Poll::Ready(Ok((cid, block, block_len))) => {
-                            println!("block {:?} read_bytes {}", cid, self.read_bytes);
-
-                            self.read_bytes += block_len;
-                            if let StreamEnd::AfterNBytes(blocks_len) = self.header.eof_stream {
-                                if self.read_bytes >= blocks_len {
-                                    return Poll::Ready(None);
-                                }
-                            }
-
-                            if self.validate_block_hash {
-                                assert_block_cid(&cid, &block)?;
-                            }
-
-                            return Poll::Ready(Some(Ok((cid, block))));
-                        }
-                    };
+                    }
+                    if me.validate_block_hash {
+                        assert_block_cid(&cid, &block)?;
+                    }
+                    me.read_bytes += block_len;
+                    me.decode_header_future = Some(Box::pin(decode_block(r)));
+                    Poll::Ready(Some(Ok((cid, block))))
                 }
-
-                None => {
-                    self.decode_header_future = Some(decode_block(self.r).boxed());
+                Poll::Ready(Err(CarDecodeError::BlockStartEOF))
+                    if me.header.eof_stream == StreamEnd::OnBlockEOF =>
+                {
+                    return Poll::Ready(None)
                 }
-            }
+                Poll::Ready(Err(err)) => {
+                    me.decode_header_future = None;
+                    Poll::Ready(Some(Err(err)))
+                }
+            },
+            None => Poll::Ready(None),
         }
     }
 }
 
 impl<'a, R> CarDecodeBlockStreamer<'a, R>
 where
-    R: AsyncRead + Unpin,
+    R: AsyncRead + Send + Unpin,
 {
     pub async fn new(
         r: &'a mut R,
@@ -131,31 +108,31 @@ where
     ) -> Result<CarDecodeBlockStreamer<'a, R>, CarDecodeError> {
         let header = read_car_header(r).await?;
         println!("header {:?}", header);
+        let dec = decode_block(r).await;
         return Ok(CarDecodeBlockStreamer {
-            r,
             header,
             read_bytes: 0,
             validate_block_hash,
-            decode_header_future: None,
+            decode_header_future: Some(Box::pin(async { dec })),
         });
     }
 }
 
-// pub async fn decode_car<R: AsyncRead + Unpin>(
-//     r: &mut R,
-//     validate_block_hash: bool,
-// ) -> Result<(Vec<(Cid, Vec<u8>)>, CarHeader), CarDecodeError> {
-//     let mut decoder = CarDecodeBlockStreamer::new(r, validate_block_hash).await?;
-//     let mut items: Vec<(Cid, Vec<u8>)> = vec![];
+pub async fn decode_car<R: AsyncRead + Unpin + Send>(
+    r: &mut R,
+    validate_block_hash: bool,
+) -> Result<(Vec<(Cid, Vec<u8>)>, CarHeader), CarDecodeError> {
+    let mut decoder = CarDecodeBlockStreamer::new(r, validate_block_hash).await?;
+    let mut items: Vec<(Cid, Vec<u8>)> = vec![];
 
-//     while let Some(item) = decoder.next().await {
-//         let item = item?;
-//         println!("block {:?}", item);
-//         items.push(item);
-//     }
+    while let Some(item) = decoder.next().await {
+        let item = item?;
+        println!("block {:?}", item);
+        items.push(item);
+    }
 
-//     Ok((items, decoder.header))
-// }
+    Ok((items, decoder.header))
+}
 
 pub async fn decode_car_no_stream<R: AsyncRead + Unpin>(
     r: &mut R,
@@ -166,7 +143,7 @@ pub async fn decode_car_no_stream<R: AsyncRead + Unpin>(
     let mut read_bytes = 0;
 
     loop {
-        let (cid, block, block_len) = match decode_block(r).await {
+        let (_, cid, block, block_len) = match decode_block(r).await {
             Ok(data) => data,
             Err(CarDecodeError::BlockStartEOF) if header.eof_stream == StreamEnd::OnBlockEOF => {
                 break
@@ -200,7 +177,7 @@ fn decode_car_async_stream<R: AsyncRead + Unpin>(
         let mut read_bytes = 0;
 
         loop {
-            let (cid, block, block_len) = match decode_block(&mut r).await {
+            let (_, cid, block, block_len) = match decode_block(&mut r).await {
                 Ok(data) => data,
                 Err(CarDecodeError::BlockStartEOF) if header.eof_stream == StreamEnd::OnBlockEOF => {
                     break
