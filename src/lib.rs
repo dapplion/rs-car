@@ -168,10 +168,10 @@ pub async fn decode_car_no_stream<R: AsyncRead + Unpin>(
     Ok((items, header))
 }
 
-fn decode_car_async_stream<R: AsyncRead + Unpin>(
-    mut r: R,
+fn decode_car_async_stream<'a, R: AsyncRead + Unpin>(
+    mut r: &'a mut R,
     validate_block_hash: bool,
-) -> impl Stream<Item = Result<(Cid, Vec<u8>), CarDecodeError>> {
+) -> impl Stream<Item = Result<(Cid, Vec<u8>), CarDecodeError>> + 'a {
     try_stream! {
         let header = read_car_header(&mut r).await?;
         let mut read_bytes = 0;
