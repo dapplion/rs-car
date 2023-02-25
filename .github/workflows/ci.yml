@@ -51,6 +51,7 @@ jobs:
     runs-on: ${{ matrix.os || 'ubuntu-latest' }}
 
     strategy:
+      fail-fast: false
       matrix:
         name:
           - linux / stable
