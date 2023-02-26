@@ -1,13 +1,10 @@
-use async_std::sync::Mutex;
 use async_stream::try_stream;
 use cid::Cid;
 use futures::future::BoxFuture;
 use futures::AsyncRead;
-use futures::FutureExt;
 use futures::Stream;
 use futures::StreamExt;
 use std::pin::Pin;
-use std::task::ready;
 use std::task::{Context, Poll};
 
 use crate::block_cid::assert_block_cid;
@@ -67,15 +64,16 @@ where
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let me = Pin::into_inner(self);
 
+        if let StreamEnd::AfterNBytes(blocks_len) = me.header.eof_stream {
+            if me.read_bytes >= blocks_len {
+                return Poll::Ready(None);
+            }
+        }
+
         match &mut me.decode_header_future {
             Some(decode_future) => match decode_future.as_mut().poll(cx) {
                 Poll::Pending => Poll::Pending,
                 Poll::Ready(Ok((r, cid, block, block_len))) => {
-                    if let StreamEnd::AfterNBytes(blocks_len) = me.header.eof_stream {
-                        if me.read_bytes >= blocks_len {
-                            return Poll::Ready(None);
-                        }
-                    }
                     if me.validate_block_hash {
                         assert_block_cid(&cid, &block)?;
                     }
@@ -107,13 +105,11 @@ where
         validate_block_hash: bool,
     ) -> Result<CarDecodeBlockStreamer<'a, R>, CarDecodeError> {
         let header = read_car_header(r).await?;
-        println!("header {:?}", header);
-        let dec = decode_block(r).await;
         return Ok(CarDecodeBlockStreamer {
             header,
             read_bytes: 0,
             validate_block_hash,
-            decode_header_future: Some(Box::pin(async { dec })),
+            decode_header_future: Some(Box::pin(decode_block(r))),
         });
     }
 }
@@ -127,48 +123,13 @@ pub async fn decode_car<R: AsyncRead + Unpin + Send>(
 
     while let Some(item) = decoder.next().await {
         let item = item?;
-        println!("block {:?}", item);
         items.push(item);
     }
 
     Ok((items, decoder.header))
 }
 
-pub async fn decode_car_no_stream<R: AsyncRead + Unpin>(
-    r: &mut R,
-    validate_block_hash: bool,
-) -> Result<(Vec<(Cid, Vec<u8>)>, CarHeader), CarDecodeError> {
-    let header = read_car_header(r).await?;
-    let mut items: Vec<(Cid, Vec<u8>)> = vec![];
-    let mut read_bytes = 0;
-
-    loop {
-        let (_, cid, block, block_len) = match decode_block(r).await {
-            Ok(data) => data,
-            Err(CarDecodeError::BlockStartEOF) if header.eof_stream == StreamEnd::OnBlockEOF => {
-                break
-            }
-            Err(err) => return Err(err),
-        };
-
-        if validate_block_hash {
-            assert_block_cid(&cid, &block)?;
-        }
-
-        items.push((cid, block));
-
-        read_bytes += block_len;
-        if let StreamEnd::AfterNBytes(blocks_len) = header.eof_stream {
-            if read_bytes >= blocks_len {
-                break;
-            }
-        }
-    }
-
-    Ok((items, header))
-}
-
-fn decode_car_async_stream<'a, R: AsyncRead + Unpin>(
+pub fn decode_car_async_stream<'a, R: AsyncRead + Unpin>(
     mut r: &'a mut R,
     validate_block_hash: bool,
 ) -> impl Stream<Item = Result<(Cid, Vec<u8>), CarDecodeError>> + 'a {
@@ -202,110 +163,179 @@ fn decode_car_async_stream<'a, R: AsyncRead + Unpin>(
     }
 }
 
-// pub async fn decode_car_2<R: AsyncRead + Send + Unpin>(
-//     r: R,
-//     validate_block_hash: bool,
-// ) -> Result<(Vec<(Cid, Vec<u8>)>, CarHeader), CarDecodeError> {
-//     let mut decoder = decode_car_async_stream(r, validate_block_hash);
-
-//     let items = decoder.collect::<Vec<(Cid, Vec<u8>)>>().await;
-
-//     let mut items = vec![];
-
-//     while let Some(item) = Pin::new(&mut decoder).next().await {
-//         let item = item?;
-//         println!("block {:?}", item);
-//         items.push(item);
-//     }
-
-//     Ok((items, decoder.header))
-// }
-
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-
-    use crate::carv1_header::CarV1Header;
-
     use super::*;
+    use crate::car_header::CarVersion;
+    use futures::executor;
+    use serde::{Deserialize, Serialize};
+    use std::{collections::HashMap, str::FromStr};
 
-    #[tokio::test]
-    async fn decode_carv1_helloworld_no_stream() {
-        let car_filepath = "./tests/custom_fixtures/helloworld.car";
-        let mut file = async_std::fs::File::open(car_filepath).await.unwrap();
-        let (blocks, header) = decode_car_no_stream(&mut file, true).await.unwrap();
-
-        let root_cid = Cid::from_str("QmUU2HcUBVSXkfWPUc3WUSeCMrWWeEJTuAgR9uyWBhh9Nf").unwrap();
-        let root_block = hex::decode("0a110802120b68656c6c6f776f726c640a180b").unwrap();
-
-        assert_eq!(blocks, vec!((root_cid, root_block)));
-        assert_eq!(
-            header.header_v1,
-            CarV1Header {
-                version: 1,
-                roots: Some(vec!(root_cid))
-            }
-        )
+    #[derive(Debug, Deserialize, Serialize)]
+    struct ExpectedCarv1 {
+        header: ExpectedCarv1Header,
+        blocks: Vec<ExpectedCarBlock>,
     }
 
-    #[tokio::test]
-    async fn decode_carv1_helloworld_stream() {
-        let car_filepath = "./tests/custom_fixtures/helloworld.car";
-        let mut file = async_std::fs::File::open(car_filepath).await.unwrap();
-        let (blocks, header) = decode_car(&mut file, true).await.unwrap();
-
-        let root_cid = Cid::from_str("QmUU2HcUBVSXkfWPUc3WUSeCMrWWeEJTuAgR9uyWBhh9Nf").unwrap();
-        let root_block = hex::decode("0a110802120b68656c6c6f776f726c640a180b").unwrap();
-
-        assert_eq!(blocks, vec!((root_cid, root_block)));
-        assert_eq!(
-            header.header_v1,
-            CarV1Header {
-                version: 1,
-                roots: Some(vec!(root_cid))
-            }
-        )
+    #[derive(Debug, Deserialize, Serialize)]
+    struct ExpectedCarv1Header {
+        roots: Vec<ExpectedCid>,
+        version: u8,
     }
 
-    #[tokio::test]
-    async fn decode_carv1_basic() {
-        let car_filepath = "./tests/spec_fixtures/carv1-basic.car";
-        let mut file = async_std::fs::File::open(car_filepath).await.unwrap();
-        decode_car(&mut file, true).await.unwrap();
+    #[derive(Debug, Deserialize, Serialize)]
+    #[allow(non_snake_case)]
+    struct ExpectedCarBlock {
+        cid: ExpectedCid,
+        blockLength: usize,
     }
 
-    #[tokio::test]
-    async fn decode_carv2_basic() {
+    type ExpectedCid = HashMap<String, String>;
+
+    fn parse_expected_cids(cids: &Vec<ExpectedCid>) -> Vec<Cid> {
+        cids.iter().map(|cid| parse_expected_cid(cid)).collect()
+    }
+
+    fn parse_expected_cid(cid: &ExpectedCid) -> Cid {
+        Cid::from_str(cid.get("/").unwrap()).unwrap()
+    }
+
+    #[test]
+    fn decode_carv1_helloworld_no_stream() {
+        executor::block_on(async {
+            let car_filepath = "./tests/custom_fixtures/helloworld.car";
+            let mut file = async_std::fs::File::open(car_filepath).await.unwrap();
+            let (blocks, header) = decode_car(&mut file, true).await.unwrap();
+
+            let root_cid = Cid::from_str("QmUU2HcUBVSXkfWPUc3WUSeCMrWWeEJTuAgR9uyWBhh9Nf").unwrap();
+            let root_block = hex::decode("0a110802120b68656c6c6f776f726c640a180b").unwrap();
+
+            assert_eq!(blocks, vec!((root_cid, root_block)));
+            assert_eq!(header.version, CarVersion::V1);
+            assert_eq!(header.roots, vec!(root_cid));
+        })
+    }
+
+    #[test]
+    fn decode_carv1_helloworld_stream() {
+        executor::block_on(async {
+            let car_filepath = "./tests/custom_fixtures/helloworld.car";
+            let mut file = async_std::fs::File::open(car_filepath).await.unwrap();
+            let (blocks, header) = decode_car(&mut file, true).await.unwrap();
+
+            let root_cid = Cid::from_str("QmUU2HcUBVSXkfWPUc3WUSeCMrWWeEJTuAgR9uyWBhh9Nf").unwrap();
+            let root_block = hex::decode("0a110802120b68656c6c6f776f726c640a180b").unwrap();
+
+            assert_eq!(blocks, vec!((root_cid, root_block)));
+            assert_eq!(header.version, CarVersion::V1);
+            assert_eq!(header.roots, vec!(root_cid));
+        })
+    }
+
+    #[test]
+    fn decode_carv1_basic() {
+        // 63a265726f6f747382d82a582500
+        // 01711220f88bc853804cf294fe417e4fa83028689fcdb1b1592c5102e1474dbc200fab8b - v1 header root (bafyreihyrpefhacm6kkp4ql6j6udakdit7g3dmkzfriqfykhjw6cad5lrm)
+        // d82a582500
+        // 0171122069ea0740f9807a28f4d932c62e7c1c83be055e55072c90266ab3e79df63a365b - v1 header root (bafyreidj5idub6mapiupjwjsyyxhyhedxycv4vihfsicm2vt46o7morwlm)
+        // 6776657273696f6e01
+        // 5b - block 0 len = 91, block_len = 55
+        // 01711220f88bc853804cf294fe417e4fa83028689fcdb1b1592c5102e1474dbc200fab8b - block 0 cid (bafyreihyrpefhacm6kkp4ql6j6udakdit7g3dmkzfriqfykhjw6cad5lrm)
+        // a2646c696e6bd82a582300122002acecc5de2438ea4126a3010ecb1f8a599c8eff22fff1a1dcffe999b27fd3de646e616d6564626c6970 - block 0 data
+        // 8301 - block 1 len = 131, block_len = 97
+        // 122002acecc5de2438ea4126a3010ecb1f8a599c8eff22fff1a1dcffe999b27fd3de - block 1 cid (QmNX6Tffavsya4xgBi2VJQnSuqy9GsxongxZZ9uZBqp16d)
+        // 122e0a2401551220b6fbd675f98e2abd22d4ed29fdc83150fedc48597e92dd1a7a24381d44a274511204626561721804122f0a22122079a982de3c9907953d4d323cee1d0fb1ed8f45f8ef02870c0cb9e09246bd530a12067365636f6e64189501 - block 1 data
+        // 28 - block 2 len = 40, block_len = 4
+        // 01551220b6fbd675f98e2abd22d4ed29fdc83150fedc48597e92dd1a7a24381d44a27451 - block 2 cid (bafkreifw7plhl6mofk6sfvhnfh64qmkq73oeqwl6sloru6rehaoujituke)
+        // 63636363 - block 2 data
+        // 8001 - block 3 len = 128, block_len = 94
+        // 122079a982de3c9907953d4d323cee1d0fb1ed8f45f8ef02870c0cb9e09246bd530a - block 3 cid (QmWXZxVQ9yZfhQxLD35eDR8LiMRsYtHxYqTFCBbJoiJVys)
+        // 122d0a240155122081cc5b17018674b401b42f35ba07bb79e211239c23bffe658da1577e3e6468771203646f671804122d0a221220e7dc486e97e6ebe5cdabab3e392bdad128b6e09acc94bb4e2aa2af7b986d24d0120566697273741833 - block 3 data
+        // 28 - block 4 len = 40, block_len = 4
+        // 0155122081cc5b17018674b401b42f35ba07bb79e211239c23bffe658da1577e3e646877 - block 4 cid(bafkreiebzrnroamgos2adnbpgw5apo3z4iishhbdx77gldnbk57d4zdio4)
+        // 62626262 - block 4 data
+        // 51 - block 5 len = 81, block_len = 47
+        // 1220e7dc486e97e6ebe5cdabab3e392bdad128b6e09acc94bb4e2aa2af7b986d24d0 - block 5 cid (QmdwjhxpxzcMsR3qUuj7vUL8pbA7MgR3GAxWi2GLHjsKCT)
+        // 122d0a240155122061be55a8e2f6b4e172338bddf184d6dbee29c98853e0a0485ecee7f27b9af0b412036361741804 - block 5 data
+        // 28 - block 6 len = 40, block_len = 4
+        // 0155122061be55a8e2f6b4e172338bddf184d6dbee29c98853e0a0485ecee7f27b9af0b4 - block 6 cid (bafkreidbxzk2ryxwwtqxem4l3xyyjvw35yu4tcct4cqeqxwo47zhxgxqwq)
+        // 61616161 - block 6 data
+        // 36 - block 7 len = 54, block_len = 18
+        // 0171122069ea0740f9807a28f4d932c62e7c1c83be055e55072c90266ab3e79df63a365b - block 7 cid (bafyreidj5idub6mapiupjwjsyyxhyhedxycv4vihfsicm2vt46o7morwlm)
+        // a2646c696e6bf6646e616d65656c696d626f - block 7 data
+        executor::block_on(async {
+            run_car_basic_test(
+                "./tests/spec_fixtures/carv1-basic.car",
+                "./tests/spec_fixtures/carv1-basic.json",
+            )
+            .await;
+        })
+    }
+
+    #[test]
+    fn decode_carv2_basic() {
         // 0aa16776657273696f6e02  - v2 pragma
         // 00000000000000000000000000000000  - v2 header characteristics
         // 3300000000000000  - v2 header data_offset
         // c001000000000000  - v2 header data_size
         // f301000000000000  - v2 header index_offset
-        // 38a265726f6f747381
-        // d82a5823001220fb16f5083412ef1371d031ed4aa239903d84efdadf1ba3
-        // cd678e6475b1a232f86776657273696f6e01511220fb16f5083412ef1371
-        // d031ed4aa239903d84efdadf1ba3cd678e6475b1a232f8122d0a221220d9
-        // c0d5376d26f1931f7ad52d7acc00fc1090d2edb0808bf61eeb0a152826f6
-        // 261204f09f8da418a40185011220d9c0d5376d26f1931f7ad52d7acc00fc
-        // 1090d2edb0808bf61eeb0a152826f62612310a221220d745b7757f5b4593
-        // eeab7820306c7bc64eb496a7410a0d07df7a34ffec4b97f1120962617272
-        // 656c657965183a122e0a2401551220a2e1c40da1ae335d4dffe729eb4d5c
-        // a23b74b9e51fc535f4a804a261080c294d1204f09f90a11807581220d745
-        // b7757f5b4593eeab7820306c7bc64eb496a7410a0d07df7a34ffec4b97f1
-        // 12340a2401551220b474a99a2705e23cf905a484ec6d14ef58b56bbe62e9
-        // 292783466ec363b5072d120a666973686d6f6e67657218042801551220b4
-        // 74a99a2705e23cf905a484ec6d14ef58b56bbe62e9292783466ec363b507
-        // 2d666973682b01551220a2e1c40da1ae335d4dffe729eb4d5ca23b74b9e5
-        // 1fc535f4a804a261080c294d6c6f62737465720100000028000000c80000
-        // 0000000000a2e1c40da1ae335d4dffe729eb4d5ca23b74b9e51fc535f4a8
-        // 04a261080c294d9401000000000000b474a99a2705e23cf905a484ec6d14
-        // ef58b56bbe62e9292783466ec363b5072d6b01000000000000d745b7757f
-        // 5b4593eeab7820306c7bc64eb496a7410a0d07df7a34ffec4b97f1120100
-        // 0000000000d9c0d5376d26f1931f7ad52d7acc00fc1090d2edb0808bf61e
-        // eb0a152826f6268b00000000000000fb16f5083412ef1371d031ed4aa239
-        // 903d84efdadf1ba3cd678e6475b1a232f83900000000000000
-        let car_filepath = "./tests/spec_fixtures/carv2-basic.car";
+        // 38a265726f6f747381d82a582300
+        // 1220fb16f5083412ef1371d031ed4aa239903d84efdadf1ba3cd678e6475b1a232f8 - v1 header root (QmfEoLyB5NndqeKieExd1rtJzTduQUPEV8TwAYcUiy3H5Z)
+        // 6776657273696f6e01
+        // 51 - block 0 len = 81, block_len = 47
+        // 1220fb16f5083412ef1371d031ed4aa239903d84efdadf1ba3cd678e6475b1a232f8 - block 0 cid (QmfEoLyB5NndqeKieExd1rtJzTduQUPEV8TwAYcUiy3H5Z)
+        // 122d0a221220d9c0d5376d26f1931f7ad52d7acc00fc1090d2edb0808bf61eeb0a152826f6261204f09f8da418a401 - block 0 data
+        // 8501 -  block 1 len = 133, block_len = 99
+        // 1220d9c0d5376d26f1931f7ad52d7acc00fc1090d2edb0808bf61eeb0a152826f626 - block 1 cid (QmczfirA7VEH7YVvKPTPoU69XM3qY4DC39nnTsWd4K3SkM)
+        // 12310a221220d745b7757f5b4593eeab7820306c7bc64eb496a7410a0d07df7a34ffec4b97f1120962617272656c657965183a122e0a2401551220a2e1c40da1ae335d4dffe729eb4d5ca23b74b9e51fc535f4a804a261080c294d1204f09f90a11807 - block 1 data
+        // 58 - block 2 len = 88, block_len = 54
+        // 1220d745b7757f5b4593eeab7820306c7bc64eb496a7410a0d07df7a34ffec4b97f1 - block 2 cid (Qmcpz2FHJD7VAhg1fxFXdYJKePtkx1BsHuCrAgWVnaHMTE)
+        // 12340a2401551220b474a99a2705e23cf905a484ec6d14ef58b56bbe62e9292783466ec363b5072d120a666973686d6f6e6765721804 - block 2 data
+        // 28 - block 3 len = 40, block_len 4
+        // 01551220b474a99a2705e23cf905a484ec6d14ef58b56bbe62e9292783466ec363b5072d - block 3 cid (bafkreifuosuzujyf4i6psbneqtwg2fhplc2wxptc5euspa2gn3bwhnihfu)
+        // 66697368 - block 3 data
+        // 2b - block 4 len = 43, block_len 7
+        // 01551220a2e1c40da1ae335d4dffe729eb4d5ca23b74b9e51fc535f4a804a261080c294d - block 4 cid (bafkreifc4hca3inognou377hfhvu2xfchn2ltzi7yu27jkaeujqqqdbjju)
+        // 6c6f6273746572 - block 4 data
+        // 0100000028000000c800000000000000a2e1c40da1ae335d4dffe729eb4d5ca23b74b9e51fc535f4a804a261080c294d9401000000000000b474a99a2705e23cf905a484ec6d14ef58b56bbe62e9292783466ec363b5072d6b01000000000000d745b7757f5b4593eeab7820306c7bc64eb496a7410a0d07df7a34ffec4b97f11201000000000000d9c0d5376d26f1931f7ad52d7acc00fc1090d2edb0808bf61eeb0a152826f6268b00000000000000fb16f5083412ef1371d031ed4aa239903d84efdadf1ba3cd678e6475b1a232f83900000000000000
+
+        executor::block_on(async {
+            run_car_basic_test(
+                "./tests/spec_fixtures/carv2-basic.car",
+                "./tests/spec_fixtures/carv2-basic.json",
+            )
+            .await;
+        })
+    }
+
+    async fn run_car_basic_test(car_filepath: &str, car_json_expected: &str) {
+        let expected_car = std::fs::read_to_string(car_json_expected).unwrap();
+        let expected_car: ExpectedCarv1 = serde_json::from_str(&expected_car).unwrap();
+
         let mut file = async_std::fs::File::open(car_filepath).await.unwrap();
-        decode_car(&mut file, true).await.unwrap();
+        let mut streamer = CarDecodeBlockStreamer::new(&mut file, true).await.unwrap();
+
+        // Assert header v1
+        assert_eq!(streamer.header.version as u8, expected_car.header.version);
+        assert_eq!(
+            streamer.header.roots,
+            parse_expected_cids(&expected_car.header.roots)
+        );
+
+        // Consume stream and read all blocks into memory
+        let mut blocks: Vec<(Cid, Vec<u8>)> = vec![];
+        while let Some(item) = streamer.next().await {
+            let item = item.unwrap();
+            blocks.push(item);
+        }
+
+        // Assert block's cids, with validate_block_hash == true guarantees block's integrity
+        let block_cids = blocks.iter().map(|block| block.0).collect::<Vec<Cid>>();
+        let expected_block_cids = expected_car
+            .blocks
+            .iter()
+            .map(|block| parse_expected_cid(&block.cid))
+            .collect::<Vec<Cid>>();
+        assert_eq!(block_cids, expected_block_cids);
     }
 }

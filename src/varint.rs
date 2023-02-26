@@ -17,8 +17,6 @@ pub(crate) async fn read_varint_u64<R: AsyncRead + Unpin>(
         let byte = buf[0];
         result |= u64::from(byte & 0b0111_1111) << i * 7;
 
-        println!("read_varint_u64 {} {}", i, result);
-
         // If is last byte = leftmost bit is zero
         if byte & 0b1000_0000 == 0 {
             return Ok(Some((result, i + 1)));

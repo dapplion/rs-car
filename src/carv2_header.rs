@@ -5,6 +5,7 @@ pub(crate) const CARV2_PRAGMA_SIZE: usize = 11;
 
 // The pragma of a CARv2, containing the version number.
 // This is a valid CARv1 header, with version number of 2 and no root CIDs.
+#[allow(dead_code)]
 pub(crate) const CARV2_PRAGMA: [u8; CARV2_PRAGMA_SIZE] = [
     0x0a, // unit(10)
     0xa1, // map(1)

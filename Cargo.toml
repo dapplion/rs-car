@@ -7,16 +7,7 @@ edition = "2021"
 
 [dependencies]
 hex = "0.4.3"
-varint = "0.9.0"
-tokio = { version = "1", features = ["full"] }
-tokio-util = { version = "0.7.7", features = ["full"] }
 futures = "0.3.26"
-async-std = "1.12.0"
-env_logger = "0.10.0"
-log = "0.4.17"
-bytes = "1.4.0"
-asynchronous-codec = "0.6.1"
-unsigned-varint = { version = "0.7.1", features = ["asynchronous_codec"] }
 cid = "0.10.1"
 libipld = "0.16.0"
 multibase = "0.9.1"
@@ -28,5 +19,8 @@ blake2b_simd = "1.0.1"
 async-stream = "0.3.4"
 
 [dev-dependencies]
+async-std = "1.12.0"
 quickcheck = "1.0.3"
 quickcheck_macros = "1.0.0"
+serde = "1.0.152"
+serde_json = "1.0.93"
