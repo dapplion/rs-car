@@ -10,6 +10,7 @@ use crate::{
     varint::read_varint_u64,
 };
 
+const CODE_IDENTITY: u64 = 0x00;
 const CODE_SHA2_256: u64 = 0x12;
 const CODE_BLAKE2B_256: u64 = 0xb220;
 const DIGEST_SIZE: usize = 64;
@@ -75,8 +76,10 @@ async fn read_multihash<R: AsyncRead + Unpin>(
 
 pub(crate) fn assert_block_cid(cid: &Cid, block: &[u8]) -> Result<(), CarDecodeError> {
     let (hash_fn_name, block_digest) = match cid.hash().code() {
-        CODE_SHA2_256 => ("sha2-256", hash_sha2_256(block)),
-        CODE_BLAKE2B_256 => ("blake2b-256", hash_blake2b_256(block)),
+        // TODO: Remove need to copy on .to_vec()
+        CODE_IDENTITY => ("identity", block.to_vec()),
+        CODE_SHA2_256 => ("sha2-256", hash_sha2_256(block).to_vec()),
+        CODE_BLAKE2B_256 => ("blake2b-256", hash_blake2b_256(block).to_vec()),
         code => {
             let code = match Codec::from_code(code as u16) {
                 Ok(code) => HashCode::Name(code),
@@ -88,8 +91,7 @@ pub(crate) fn assert_block_cid(cid: &Cid, block: &[u8]) -> Result<(), CarDecodeE
 
     let cid_digest = cid.hash().digest();
 
-    // TODO: Remove need to copy on .to_vec()
-    if cid_digest != block_digest.to_vec() {
+    if cid_digest != block_digest {
         return Err(CarDecodeError::BlockDigestMismatch(format!(
             "{} digest mismatch cid {:?} cid digest {} block digest {}",
             hash_fn_name,
@@ -132,7 +134,7 @@ mod tests {
 
     const CID_V0_STR: &str = "QmUU2HcUBVSXkfWPUc3WUSeCMrWWeEJTuAgR9uyWBhh9Nf";
     const CID_V0_HEX: &str = "12205b0995ced69229d26009c53c185a62ea805a339383521edbed1028c496615448";
-    const CID_DIGEST: &str = "5b0995ced69229d26009c53c185a62ea805a339383521edbed1028c4966154480000000000000000000000000000000000000000000000000000000000000000";
+    const CID_DIGEST: &str = "5b0995ced69229d26009c53c185a62ea805a339383521edbed1028c496615448";
 
     const CID_V1_STR: &str = "bafyreihyrpefhacm6kkp4ql6j6udakdit7g3dmkzfriqfykhjw6cad5lrm";
     const CID_V1_HEX: &str =

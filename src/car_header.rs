@@ -1,3 +1,4 @@
+use cid::Cid;
 use futures::AsyncRead;
 use futures::AsyncReadExt;
 
@@ -21,12 +22,21 @@ pub(crate) enum StreamEnd {
     OnBlockEOF,
 }
 
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum CarVersion {
+    V1 = 1,
+    V2 = 2,
+}
+
 #[derive(Debug)]
 pub struct CarHeader {
-    pub(crate) header_v1: CarV1Header,
-    pub(crate) header_v2: Option<CarV2Header>,
+    pub version: CarVersion,
+    pub roots: Vec<Cid>,
+    pub characteristics_v2: Option<u128>,
     pub(crate) eof_stream: StreamEnd,
 }
+
+impl CarHeader {}
 
 pub(crate) async fn read_car_header<R: AsyncRead + Unpin>(
     r: &mut R,
@@ -36,8 +46,11 @@ pub(crate) async fn read_car_header<R: AsyncRead + Unpin>(
     match header.version {
         1 => {
             return Ok(CarHeader {
-                header_v1: header,
-                header_v2: None,
+                version: CarVersion::V1,
+                roots: header.roots.ok_or(CarDecodeError::InvalidCarV1Header(
+                    "v1 header has not roots".to_owned(),
+                ))?,
+                characteristics_v2: None,
                 eof_stream: StreamEnd::OnBlockEOF,
             })
         }
@@ -45,8 +58,11 @@ pub(crate) async fn read_car_header<R: AsyncRead + Unpin>(
             let (header_v2, (header_v1, header_v1_len)) = read_carv2_header(r).await?;
             let blocks_len = header_v2.data_size as usize - header_v1_len;
             return Ok(CarHeader {
-                header_v1,
-                header_v2: Some(header_v2),
+                version: CarVersion::V2,
+                roots: header_v1.roots.ok_or(CarDecodeError::InvalidCarV1Header(
+                    "v1 header has not roots".to_owned(),
+                ))?,
+                characteristics_v2: Some(header_v2.characteristics),
                 eof_stream: StreamEnd::AfterNBytes(blocks_len),
             });
         }
@@ -121,21 +137,24 @@ mod tests {
         carv1_header::CarV1Header,
         carv2_header::{CARV2_PRAGMA, CARV2_PRAGMA_SIZE},
     };
+    use futures::executor;
     use futures::io::Cursor;
 
-    #[tokio::test]
-    async fn read_carv1_header_v2_pragma() {
-        assert_eq!(
-            read_carv1_header(&mut Cursor::new(&CARV2_PRAGMA))
-                .await
-                .unwrap(),
-            (
-                CarV1Header {
-                    version: 2,
-                    roots: None
-                },
-                CARV2_PRAGMA_SIZE
+    #[test]
+    fn read_carv1_header_v2_pragma() {
+        executor::block_on(async {
+            assert_eq!(
+                read_carv1_header(&mut Cursor::new(&CARV2_PRAGMA))
+                    .await
+                    .unwrap(),
+                (
+                    CarV1Header {
+                        version: 2,
+                        roots: None
+                    },
+                    CARV2_PRAGMA_SIZE
+                )
             )
-        )
+        })
     }
 }
