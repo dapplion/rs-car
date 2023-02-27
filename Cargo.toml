@@ -20,7 +20,7 @@ multicodec = "0.1.0"
 blake2b_simd = "1.0.1"
 
 [dev-dependencies]
-async-std = "1.12.0"
+async-std = { version = "1.12.0", features = ["attributes"] }
 quickcheck = "1.0.3"
 quickcheck_macros = "1.0.0"
 serde = "1.0.152"

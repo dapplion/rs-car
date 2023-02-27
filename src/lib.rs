@@ -52,12 +52,22 @@ where
     ///
     /// # Examples
     /// ```
-    /// let mut car_reader = CarReader::new(r, validate_block_hash).await?;
-    /// println!("{:?}", car_reader.header);
+    /// use rs_car::{CarReader, CarDecodeError};
+    /// use futures::StreamExt;
     ///
-    /// while let Some(item) = car_reader.next().await {
+    /// #[async_std::main]
+    /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    ///   let mut r = async_std::fs::File::open("./tests/custom_fixtures/helloworld.car").await?;
+    ///
+    ///   let mut car_reader = CarReader::new(&mut r, true).await?;
+    ///   println!("{:?}", car_reader.header);
+    ///
+    ///   while let Some(item) = car_reader.next().await {
     ///     let (cid, block) = item?;
     ///     println!("{:?} {} bytes", cid, block.len());
+    ///   }
+    ///
+    ///   Ok(())
     /// }
     /// ```
     pub async fn new(
@@ -79,11 +89,20 @@ where
 /// # Examples
 ///
 /// ```
-/// let (blocks, header) = car_read_all(r, true).await.unwrap();
-/// println!("{:?}", header);
+/// use rs_car::car_read_all;
 ///
-/// for (cid, block) in blocks {
-///   println!("{:?} {} bytes", cid, block.len());
+/// #[async_std::main]
+/// async fn main() -> Result<(), Box<dyn std::error::Error>> {
+///   let mut r = async_std::fs::File::open("./tests/custom_fixtures/helloworld.car").await?;
+///
+///   let (blocks, header) = car_read_all(&mut r, true).await?;
+///   println!("{:?}", header);
+///
+///   for (cid, block) in blocks {
+///     println!("{:?} {} bytes", cid, block.len());
+///   }
+///
+///   Ok(())
 /// }
 /// ```
 pub async fn car_read_all<R: AsyncRead + Unpin + Send>(
