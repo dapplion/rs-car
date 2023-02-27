@@ -7,9 +7,6 @@ edition = "2021"
 name = "rs_car"
 path = "src/lib.rs"
 
-[patch.crates-io]
-ipfs-unixfs = { path = 'rust-ipfs/unixfs' }
-
 [dependencies]
 hex = "0.4.3"
 futures = "0.3.26"
@@ -24,7 +21,6 @@ blake2b_simd = "1.0.1"
 
 [dev-dependencies]
 async-std = "1.12.0"
-ipfs-unixfs = "0.2.0"
 quickcheck = "1.0.3"
 quickcheck_macros = "1.0.0"
 serde = "1.0.152"
