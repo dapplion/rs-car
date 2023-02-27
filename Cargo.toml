@@ -2,6 +2,13 @@
 name = "rs-car"
 version = "0.1.0"
 edition = "2021"
+description = "Rust implementation of the CAR v1 and v2 specifications"
+keywords = ["ipfs", "ipld", "car"]
+repository = "https://github.com/dapplion/rs-car"
+documentation = "https://docs.rs/rs-car"
+authors = ["dapplion <dapplion@chainsafe.io>"]
+readme = "README.md"
+license = "MIT OR Apache-2.0"
 
 [lib]
 name = "rs_car"
