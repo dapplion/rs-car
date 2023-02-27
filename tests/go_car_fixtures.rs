@@ -1,4 +1,4 @@
-use rs_car::decode_car;
+use rs_car::car_read_all;
 
 enum TestResult {
     Error(&'static str),
@@ -12,7 +12,7 @@ macro_rules! go_car_fixture_test {
             let result = std::panic::catch_unwind(|| {
                 let mut file =
                     futures::executor::block_on(async_std::fs::File::open($file)).unwrap();
-                futures::executor::block_on(decode_car(&mut file, true))
+                futures::executor::block_on(car_read_all(&mut file, true))
             });
 
             match result {

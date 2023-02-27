@@ -1,4 +1,12 @@
-use async_stream::try_stream;
+//! Rust implementation of the [CAR specifications](https://ipld.io/specs/transport/car/),
+//! both [CARv1](https://ipld.io/specs/transport/car/carv1/) and [CARv2](https://ipld.io/specs/transport/car/carv2/).
+//!
+//! # Usage
+//!
+//! - To get a block streamer [`CarReader::new()`]
+//! - To read all blocks in memory [car_read_all]
+//!
+
 use cid::Cid;
 use futures::future::BoxFuture;
 use futures::AsyncRead;
@@ -12,50 +20,110 @@ use crate::car_block::decode_block;
 use crate::car_header::read_car_header;
 pub use crate::car_header::CarHeader;
 use crate::car_header::StreamEnd;
-use crate::error::CarDecodeError;
+pub use crate::error::CarDecodeError;
 
 mod block_cid;
 mod car_block;
 mod car_header;
 mod carv1_header;
 mod carv2_header;
-pub mod error;
+mod error;
 mod varint;
 
-/// CARv1 consists of:
-/// - TODO
+/// Decodes a CAR stream yielding its blocks and optionally verifying integrity.
+/// Supports CARv1 and CARv2 formats.
 ///
-/// ```nn
-/// [-------header---------][---------------data---------------]
-/// [varint][DAG-CBOR block][varint|CID|block][varint|CID|block]
-/// ```
-///
-/// ## Header
-/// First
-
-/// CARv2 consists of:
-/// - 11-byte pragma
-/// - 40-byte header with characteristics and locations
-/// - CARv1 data payload, including header, roots and sequence of CID:Bytes pairs
-/// - Optional index for fast lookup
-///
-/// ```nn
-/// [pragma][v2 header][opt padding][CARv1][opt padding][opt index]
-/// ```
-///
-
-struct CarDecodeBlockStreamer<'a, R> {
+/// - To get a block streamer [`CarReader::new()`]
+/// - To read all blocks in memory [car_read_all]
+pub struct CarReader<'a, R> {
     // r: &'a mut R,
     pub header: CarHeader,
-    pub read_bytes: usize,
+    read_bytes: usize,
     validate_block_hash: bool,
     decode_header_future: Option<DecodeBlockFuture<'a, R>>,
+}
+
+impl<'a, R> CarReader<'a, R>
+where
+    R: AsyncRead + Send + Unpin,
+{
+    /// Decodes a CAR stream up to the header. Returns a `Stream` type that yields
+    /// blocks. The CAR header is available in [`CarReader.header`].
+    ///
+    /// # Examples
+    /// ```
+    /// use rs_car::{CarReader, CarDecodeError};
+    /// use futures::StreamExt;
+    ///
+    /// #[async_std::main]
+    /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    ///   let mut r = async_std::fs::File::open("./tests/custom_fixtures/helloworld.car").await?;
+    ///
+    ///   let mut car_reader = CarReader::new(&mut r, true).await?;
+    ///   println!("{:?}", car_reader.header);
+    ///
+    ///   while let Some(item) = car_reader.next().await {
+    ///     let (cid, block) = item?;
+    ///     println!("{:?} {} bytes", cid, block.len());
+    ///   }
+    ///
+    ///   Ok(())
+    /// }
+    /// ```
+    pub async fn new(
+        r: &'a mut R,
+        validate_block_hash: bool,
+    ) -> Result<CarReader<'a, R>, CarDecodeError> {
+        let header = read_car_header(r).await?;
+        return Ok(CarReader {
+            header,
+            read_bytes: 0,
+            validate_block_hash,
+            decode_header_future: Some(Box::pin(decode_block(r))),
+        });
+    }
+}
+
+/// Decodes a CAR stream buffering all blocks in memory. For a Stream API use [CarReader].
+///
+/// # Examples
+///
+/// ```
+/// use rs_car::car_read_all;
+///
+/// #[async_std::main]
+/// async fn main() -> Result<(), Box<dyn std::error::Error>> {
+///   let mut r = async_std::fs::File::open("./tests/custom_fixtures/helloworld.car").await?;
+///
+///   let (blocks, header) = car_read_all(&mut r, true).await?;
+///   println!("{:?}", header);
+///
+///   for (cid, block) in blocks {
+///     println!("{:?} {} bytes", cid, block.len());
+///   }
+///
+///   Ok(())
+/// }
+/// ```
+pub async fn car_read_all<R: AsyncRead + Unpin + Send>(
+    r: &mut R,
+    validate_block_hash: bool,
+) -> Result<(Vec<(Cid, Vec<u8>)>, CarHeader), CarDecodeError> {
+    let mut decoder = CarReader::new(r, validate_block_hash).await?;
+    let mut items: Vec<(Cid, Vec<u8>)> = vec![];
+
+    while let Some(item) = decoder.next().await {
+        let item = item?;
+        items.push(item);
+    }
+
+    Ok((items, decoder.header))
 }
 
 type DecodeBlockFuture<'a, R> =
     BoxFuture<'a, Result<(&'a mut R, Cid, Vec<u8>, usize), CarDecodeError>>;
 
-impl<'a, R> Stream for CarDecodeBlockStreamer<'a, R>
+impl<'a, R> Stream for CarReader<'a, R>
 where
     R: AsyncRead + Send + Unpin + 'a,
 {
@@ -93,73 +161,6 @@ where
             },
             None => Poll::Ready(None),
         }
-    }
-}
-
-impl<'a, R> CarDecodeBlockStreamer<'a, R>
-where
-    R: AsyncRead + Send + Unpin,
-{
-    pub async fn new(
-        r: &'a mut R,
-        validate_block_hash: bool,
-    ) -> Result<CarDecodeBlockStreamer<'a, R>, CarDecodeError> {
-        let header = read_car_header(r).await?;
-        return Ok(CarDecodeBlockStreamer {
-            header,
-            read_bytes: 0,
-            validate_block_hash,
-            decode_header_future: Some(Box::pin(decode_block(r))),
-        });
-    }
-}
-
-pub async fn decode_car<R: AsyncRead + Unpin + Send>(
-    r: &mut R,
-    validate_block_hash: bool,
-) -> Result<(Vec<(Cid, Vec<u8>)>, CarHeader), CarDecodeError> {
-    let mut decoder = CarDecodeBlockStreamer::new(r, validate_block_hash).await?;
-    let mut items: Vec<(Cid, Vec<u8>)> = vec![];
-
-    while let Some(item) = decoder.next().await {
-        let item = item?;
-        items.push(item);
-    }
-
-    Ok((items, decoder.header))
-}
-
-pub fn decode_car_async_stream<'a, R: AsyncRead + Unpin>(
-    mut r: &'a mut R,
-    validate_block_hash: bool,
-) -> impl Stream<Item = Result<(Cid, Vec<u8>), CarDecodeError>> + 'a {
-    try_stream! {
-        let header = read_car_header(&mut r).await?;
-        let mut read_bytes = 0;
-
-        loop {
-            let (_, cid, block, block_len) = match decode_block(&mut r).await {
-                Ok(data) => data,
-                Err(CarDecodeError::BlockStartEOF) if header.eof_stream == StreamEnd::OnBlockEOF => {
-                    break
-                }
-                Err(err) => Err(err)?,
-            };
-
-            if validate_block_hash {
-                assert_block_cid(&cid, &block)?;
-            }
-
-            yield (cid, block);
-
-            read_bytes += block_len;
-            if let StreamEnd::AfterNBytes(blocks_len) = header.eof_stream {
-                if read_bytes >= blocks_len {
-                    break;
-                }
-            }
-        }
-
     }
 }
 
@@ -205,7 +206,7 @@ mod tests {
         executor::block_on(async {
             let car_filepath = "./tests/custom_fixtures/helloworld.car";
             let mut file = async_std::fs::File::open(car_filepath).await.unwrap();
-            let (blocks, header) = decode_car(&mut file, true).await.unwrap();
+            let (blocks, header) = car_read_all(&mut file, true).await.unwrap();
 
             let root_cid = Cid::from_str("QmUU2HcUBVSXkfWPUc3WUSeCMrWWeEJTuAgR9uyWBhh9Nf").unwrap();
             let root_block = hex::decode("0a110802120b68656c6c6f776f726c640a180b").unwrap();
@@ -221,7 +222,7 @@ mod tests {
         executor::block_on(async {
             let car_filepath = "./tests/custom_fixtures/helloworld.car";
             let mut file = async_std::fs::File::open(car_filepath).await.unwrap();
-            let (blocks, header) = decode_car(&mut file, true).await.unwrap();
+            let (blocks, header) = car_read_all(&mut file, true).await.unwrap();
 
             let root_cid = Cid::from_str("QmUU2HcUBVSXkfWPUc3WUSeCMrWWeEJTuAgR9uyWBhh9Nf").unwrap();
             let root_block = hex::decode("0a110802120b68656c6c6f776f726c640a180b").unwrap();
@@ -313,7 +314,7 @@ mod tests {
         let expected_car: ExpectedCarv1 = serde_json::from_str(&expected_car).unwrap();
 
         let mut file = async_std::fs::File::open(car_filepath).await.unwrap();
-        let mut streamer = CarDecodeBlockStreamer::new(&mut file, true).await.unwrap();
+        let mut streamer = CarReader::new(&mut file, true).await.unwrap();
 
         // Assert header v1
         assert_eq!(streamer.header.version as u8, expected_car.header.version);

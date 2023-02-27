@@ -11,6 +11,12 @@ pub(crate) struct CarV1Header {
     pub roots: Option<Vec<Cid>>,
 }
 
+/// CARv1 header structure
+///
+/// ```nn
+/// [-------header---------][---------------data---------------]
+/// [varint][DAG-CBOR block][varint|CID|block][varint|CID|block]
+/// ```
 pub(crate) fn decode_carv1_header(header: &[u8]) -> Result<CarV1Header, CarDecodeError> {
     let header: Ipld = DagCborCodec.decode(&header).or_else(|e| {
         Err(CarDecodeError::InvalidCarV1Header(format!(

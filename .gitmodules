@@ -1,0 +1,3 @@
+[submodule "rust-ipfs"]
+	path = rust-ipfs
+	url = https://github.com/dapplion/rust-ipfs.git
