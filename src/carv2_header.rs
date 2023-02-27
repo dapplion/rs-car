@@ -22,6 +22,16 @@ pub(crate) struct CarV2Header {
     pub index_offset: u64,
 }
 
+/// CARv2 header consists of:
+/// - 11-byte pragma
+/// - 40-byte header with characteristics and locations
+/// - CARv1 data payload, including header, roots and sequence of CID:Bytes pairs
+/// - Optional index for fast lookup
+///
+/// Full CARv2 stream
+/// ```nn
+/// [pragma][v2 header][opt padding][CARv1][opt padding][opt index]
+/// ```
 pub(crate) fn decode_carv2_header(
     header: &[u8; CARV2_HEADER_SIZE],
 ) -> Result<CarV2Header, CarDecodeError> {

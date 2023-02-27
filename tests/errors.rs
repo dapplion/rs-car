@@ -1,5 +1,5 @@
 use futures::io::Cursor;
-use rs_car::decode_car;
+use rs_car::car_read_all;
 
 enum TestResult {
     Error(&'static str),
@@ -23,7 +23,7 @@ macro_rules! error_test {
                 };
 
                 let mut input = Cursor::new(hex::decode($car_hex.replace(" ", "")).unwrap());
-                futures::executor::block_on(decode_car(&mut input, validate_block_hash))
+                futures::executor::block_on(car_read_all(&mut input, validate_block_hash))
             });
 
             match result {
