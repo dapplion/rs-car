@@ -5,7 +5,7 @@ enum TestResult {
     Success,
 }
 
-macro_rules! go_car_fixture_test {
+macro_rules! car_read_all_test {
     ($name:ident, $file:expr, $expected:expr) => {
         #[test]
         fn $name() {
@@ -44,63 +44,68 @@ macro_rules! go_car_fixture_test {
     };
 }
 
-go_car_fixture_test!(
+car_read_all_test!(
     go_car_fixture_sample_corrupt_pragma,
     "tests/go_car_fixtures/sample-corrupt-pragma.car",
     TestResult::Error("IoError(Kind(UnexpectedEof))")
 );
-go_car_fixture_test!(
+car_read_all_test!(
     go_car_fixture_sample_rootless_v42,
     "tests/go_car_fixtures/sample-rootless-v42.car",
     TestResult::Error("UnsupportedCarVersion { version: 42 }")
 );
-go_car_fixture_test!(
+car_read_all_test!(
     go_car_fixture_sample_rw_bs_v2,
     "tests/go_car_fixtures/sample-rw-bs-v2.car",
     TestResult::Success
 );
-go_car_fixture_test!(
+car_read_all_test!(
     go_car_fixture_sample_unixfs_v2,
     "tests/go_car_fixtures/sample-unixfs-v2.car",
     TestResult::Success
 );
-go_car_fixture_test!(
+car_read_all_test!(
     go_car_fixture_sample_v1,
     "tests/go_car_fixtures/sample-v1.car",
     TestResult::Success
 );
-go_car_fixture_test!(
+car_read_all_test!(
     go_car_fixture_sample_v1_noidentity,
     "tests/go_car_fixtures/sample-v1-noidentity.car",
     TestResult::Success
 );
-go_car_fixture_test!(
+car_read_all_test!(
     go_car_fixture_sample_v1_tailing_corrupt_section,
     "tests/go_car_fixtures/sample-v1-tailing-corrupt-section.car",
     TestResult::Error("IoError(Kind(UnexpectedEof))")
 );
-go_car_fixture_test!(
+car_read_all_test!(
     go_car_fixture_sample_v1_with_zero_len_section,
     "tests/go_car_fixtures/sample-v1-with-zero-len-section.car",
     TestResult::Error("InvalidBlockHeader(\"zero length\")")
 );
-go_car_fixture_test!(
+car_read_all_test!(
     go_car_fixture_sample_v1_with_zero_len_section2,
     "tests/go_car_fixtures/sample-v1-with-zero-len-section2.car",
     TestResult::Error("InvalidBlockHeader(\"zero length\")")
 );
-go_car_fixture_test!(
+car_read_all_test!(
     go_car_fixture_sample_v2_corrupt_data_and_index,
     "tests/go_car_fixtures/sample-v2-corrupt-data-and-index.car",
     TestResult::Error("InvalidCarV1Header(\"padding len too big 18446744073709550203\")")
 );
-go_car_fixture_test!(
+car_read_all_test!(
     go_car_fixture_sample_v2_indexless,
     "tests/go_car_fixtures/sample-v2-indexless.car",
     TestResult::Success
 );
-go_car_fixture_test!(
+car_read_all_test!(
     go_car_fixture_sample_wrapped_v2_is_okay,
     "tests/go_car_fixtures/sample-wrapped-v2.car",
+    TestResult::Success
+);
+car_read_all_test!(
+    custom_fixtures_helloworld,
+    "tests/custom_fixtures/helloworld.txt.size-32.normal.car",
     TestResult::Success
 );
