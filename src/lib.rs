@@ -7,7 +7,7 @@
 //! - To read all blocks in memory [car_read_all]
 //!
 
-use cid::Cid;
+pub use cid::Cid;
 use futures::future::BoxFuture;
 use futures::AsyncRead;
 use futures::Stream;
