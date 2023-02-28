@@ -105,7 +105,12 @@ car_read_all_test!(
     TestResult::Success
 );
 car_read_all_test!(
-    custom_fixtures_helloworld,
-    "tests/custom_fixtures/helloworld.txt.size-32.normal.car",
+    custom_fixtures_config_size_1,
+    "tests/custom_fixtures/config.toml.size-1.normal.car",
+    TestResult::Success
+);
+car_read_all_test!(
+    custom_fixtures_config_size_32,
+    "tests/custom_fixtures/config.toml.size-32.normal.car",
     TestResult::Success
 );
