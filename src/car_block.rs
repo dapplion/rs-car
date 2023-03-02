@@ -13,9 +13,10 @@ const MAX_BLOCK_LEN: u64 = 1073741824;
 pub(crate) async fn decode_block<R: AsyncRead + Unpin>(
     r: &mut R,
 ) -> Result<(&mut R, Cid, Vec<u8>, usize), CarDecodeError> {
-    let (len, cid, varint_len) = decode_block_header(r).await?;
+    let (len, cid, varint_len, cid_len) = decode_block_header(r).await?;
 
-    let block_len = len - cid.encoded_len();
+    // len from header = block_len - varint_len
+    let block_len = len - cid_len;
 
     let mut block_buf = vec![0u8; block_len];
     r.read_exact(&mut block_buf).await?;
@@ -25,7 +26,7 @@ pub(crate) async fn decode_block<R: AsyncRead + Unpin>(
 
 async fn decode_block_header<R: AsyncRead + Unpin>(
     src: &mut R,
-) -> Result<(usize, Cid, usize), CarDecodeError> {
+) -> Result<(usize, Cid, usize, usize), CarDecodeError> {
     let (len, varint_len) = match read_varint_u64(src).await {
         Ok(Some(len)) => len,
         Ok(None) => {
@@ -52,7 +53,7 @@ async fn decode_block_header<R: AsyncRead + Unpin>(
         )));
     }
 
-    let cid = read_block_cid(src).await?;
+    let (cid, cid_len) = read_block_cid(src).await?;
 
-    Ok((len as usize, cid, varint_len))
+    Ok((len as usize, cid, varint_len, cid_len))
 }
