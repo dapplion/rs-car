@@ -55,7 +55,12 @@ macro_rules! error_test {
     };
 }
 
-error_test!(bad_cid_v0, "3aa265726f6f747381d8305825000130302030303030303030303030303030303030303030303030303030303030303030306776657273696f6e010130", TestResult::Error("InvalidCarV1Header(\"header cbor codec error: Unknown cbor tag `48`.\")"), TestOptions::None);
+error_test!(
+    bad_cid_v0,
+    "3aa265726f6f747381d8305825000130302030303030303030303030303030303030303030303030303030303030303030306776657273696f6e010130",
+    TestResult::Error("InvalidCarV1Header(\"header cbor codec error: Unknown cbor tag `48`.\")"),
+    TestOptions::None
+);
 
 error_test!(
     bad_header_length,
@@ -63,9 +68,20 @@ error_test!(
     TestResult::Error("InvalidCarV1Header(\"header len too big 216830324832\")"),
     TestOptions::None
 );
-error_test!(bad_section_length_1, "11a265726f6f7473806776657273696f6e01e0e0e0e0a7060155122001d448afd928065458cf670b60f5a594d735af0172c8d67f22a81680132681ca00000000000000000000", TestResult::Error("InvalidBlockHeader(\"block len too big 216830324832\")"), TestOptions::None);
 
-error_test!(bad_section_length_2, "3aa265726f6f747381d8305825000130302030303030303030303030303030303030303030303030303030303030303030306776657273696f6e01200130302030303030303030303030303030303030303030303030303030303030303030303030303030303030", TestResult::Error("InvalidCarV1Header(\"header cbor codec error: Unknown cbor tag `48`.\")"), TestOptions::None);
+error_test!(
+    bad_section_length_1,
+    "11a265726f6f7473806776657273696f6e01e0e0e0e0a7060155122001d448afd928065458cf670b60f5a594d735af0172c8d67f22a81680132681ca00000000000000000000",
+    TestResult::Error("InvalidBlockHeader(\"block len too big 216830324832\")"),
+    TestOptions::None
+);
+
+error_test!(
+    bad_section_length_2,
+    "3aa265726f6f747381d8305825000130302030303030303030303030303030303030303030303030303030303030303030306776657273696f6e01200130302030303030303030303030303030303030303030303030303030303030303030303030303030303030",
+    TestResult::Error("InvalidCarV1Header(\"header cbor codec error: Unknown cbor tag `48`.\")"),
+    TestOptions::None
+);
 
 error_test!(
     bad_section_length_3,
@@ -84,7 +100,12 @@ error_test!(
 );
 
 // same as above, but we ask for CID validation
-error_test!(bad_block_hash_do_verify, "11a265726f6f7473806776657273696f6e 012e0155122001d448afd928065458cf670b60f5a594d735af0172c8d67f22a81680132681ca ffffffffffffffffffff", TestResult::Error("BlockDigestMismatch(\"sha2-256 digest mismatch cid Cid(bafkreiab2rek7wjiazkfrt3hbnqpljmu24226alszdlh6ivic2abgjubzi) cid digest 01d448afd928065458cf670b60f5a594d735af0172c8d67f22a81680132681ca block digest 0083af118d18a63c6bb552f21d0c4ee78741f988ecd319d3cd06cb6c85a68a63\")"), TestOptions::None);
+error_test!(
+    bad_block_hash_do_verify,
+    "11a265726f6f7473806776657273696f6e 012e0155122001d448afd928065458cf670b60f5a594d735af0172c8d67f22a81680132681ca ffffffffffffffffffff",
+    TestResult::Error("BlockDigestMismatch(\"sha2-256 digest mismatch cid Cid(bafkreiab2rek7wjiazkfrt3hbnqpljmu24226alszdlh6ivic2abgjubzi) cid digest 01d448afd928065458cf670b60f5a594d735af0172c8d67f22a81680132681ca block digest 0083af118d18a63c6bb552f21d0c4ee78741f988ecd319d3cd06cb6c85a68a63\")"),
+    TestOptions::None
+);
 
 // a case where this _could_ be a valid CAR if we allowed identity CIDs and not matching block contents to exist, there's no block bytes in this
 error_test!(
