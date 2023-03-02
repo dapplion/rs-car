@@ -15,20 +15,14 @@ name = "rs_car"
 path = "src/lib.rs"
 
 [dependencies]
-hex = "0.4.3"
 futures = "0.3.26"
-cid = "0.8"
-libipld = "0.14"
-multibase = "0.9.1"
-multihash = "0.16"
-libipld-cbor = "0.14"
-sha2 = "0.10.6"
-multicodec = "0.1.0"
-blake2b_simd = "1.0.1"
+libipld = { version = "0.14", default-features = false, features = ["dag-cbor"] }
+multihash = { version = "0.16", default-features = false, features = ["blake2b", "sha2"] }
 
 [dev-dependencies]
 async-std = { version = "1.12.0", features = ["attributes"] }
+hex = "0.4.3"
 quickcheck = "1.0.3"
 quickcheck_macros = "1.0.0"
-serde = "1.0.152"
+serde = { version = "1.0.152", features = ["derive"] }
 serde_json = "1.0.93"
