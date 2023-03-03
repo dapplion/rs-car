@@ -37,12 +37,8 @@ jobs:
         with:
           components: rustfmt
 
-      - name: cargo fmt -- --check
-        run: cargo fmt -- --check
-
-      - name: temporary workaround - fmt all files under src
-        # Workaround for rust-lang/cargo#7732
-        run: cargo fmt -- --check $(find . -name '*.rs' -print)
+      - run: cargo fmt -- --check
+      - run: cargo clippy -- --deny warnings
 
   test:
     name: ${{ matrix.name }}

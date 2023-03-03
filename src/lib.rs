@@ -7,20 +7,20 @@
 //! - To read all blocks in memory [car_read_all]
 //!
 
-pub use cid::Cid;
-use futures::future::BoxFuture;
-use futures::AsyncRead;
-use futures::Stream;
-use futures::StreamExt;
-use std::pin::Pin;
-use std::task::{Context, Poll};
+use std::{
+    pin::Pin,
+    task::{Context, Poll},
+};
 
-use crate::block_cid::assert_block_cid;
-use crate::car_block::decode_block;
-use crate::car_header::read_car_header;
-pub use crate::car_header::CarHeader;
-use crate::car_header::StreamEnd;
-pub use crate::error::CarDecodeError;
+use futures::{future::BoxFuture, AsyncRead, Stream, StreamExt};
+pub use libipld::cid::Cid;
+
+use crate::{
+    block_cid::assert_block_cid,
+    car_block::decode_block,
+    car_header::{read_car_header, StreamEnd},
+};
+pub use crate::{car_header::CarHeader, error::CarDecodeError};
 
 mod block_cid;
 mod car_block;
@@ -152,7 +152,7 @@ where
                 Poll::Ready(Err(CarDecodeError::BlockStartEOF))
                     if me.header.eof_stream == StreamEnd::OnBlockEOF =>
                 {
-                    return Poll::Ready(None)
+                    Poll::Ready(None)
                 }
                 Poll::Ready(Err(err)) => {
                     me.decode_header_future = None;
@@ -166,11 +166,13 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::car_header::CarVersion;
+    use std::{collections::HashMap, str::FromStr};
+
     use futures::executor;
     use serde::{Deserialize, Serialize};
-    use std::{collections::HashMap, str::FromStr};
+
+    use super::*;
+    use crate::car_header::CarVersion;
 
     #[derive(Debug, Deserialize, Serialize)]
     struct ExpectedCarv1 {
@@ -194,7 +196,7 @@ mod tests {
     type ExpectedCid = HashMap<String, String>;
 
     fn parse_expected_cids(cids: &Vec<ExpectedCid>) -> Vec<Cid> {
-        cids.iter().map(|cid| parse_expected_cid(cid)).collect()
+        cids.iter().map(parse_expected_cid).collect()
     }
 
     fn parse_expected_cid(cid: &ExpectedCid) -> Cid {

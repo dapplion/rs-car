@@ -1,6 +1,6 @@
 use std::io;
 
-use cid::Cid;
+use libipld::cid::{self, multihash, Cid};
 
 #[derive(Debug)]
 pub enum CarDecodeError {
@@ -18,7 +18,6 @@ pub enum CarDecodeError {
 
 #[derive(Debug)]
 pub enum HashCode {
-    Name(multicodec::Codec),
     Code(u64),
 }
 

@@ -15,7 +15,7 @@ pub(crate) async fn read_varint_u64<R: AsyncRead + Unpin>(
         stream.read_exact(&mut buf).await?;
 
         let byte = buf[0];
-        result |= u64::from(byte & 0b0111_1111) << i * 7;
+        result |= u64::from(byte & 0b0111_1111) << (i * 7);
 
         // If is last byte = leftmost bit is zero
         if byte & 0b1000_0000 == 0 {
@@ -24,15 +24,16 @@ pub(crate) async fn read_varint_u64<R: AsyncRead + Unpin>(
     }
 
     // TODO: Return error
-    return Ok(None);
+    Ok(None)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::U64_LEN;
-    use crate::varint::read_varint_u64;
     use futures::io::Cursor;
     use quickcheck_macros::quickcheck;
+
+    use super::U64_LEN;
+    use crate::varint::read_varint_u64;
 
     // Implementation copied from https://github.com/paritytech/unsigned-varint/blob/a3a5b8f2bee1f44270629e96541adf805a53d32c/src/encode.rs#L22
     fn encode_varint_u64(input: u64, buf: &mut [u8; U64_LEN]) -> (&[u8], usize) {

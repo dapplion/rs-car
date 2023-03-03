@@ -1,8 +1,8 @@
-use cid::Cid;
-use futures::{AsyncRead, AsyncReadExt};
 use std::io;
 
-use crate::{block_cid::read_block_cid, error::CarDecodeError, varint::read_varint_u64};
+use futures::{AsyncRead, AsyncReadExt};
+
+use crate::{block_cid::read_block_cid, error::CarDecodeError, varint::read_varint_u64, Cid};
 
 /// Arbitrary high value to prevent big allocations
 const MAX_BLOCK_LEN: u64 = 1073741824;

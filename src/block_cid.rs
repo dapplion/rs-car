@@ -1,13 +1,11 @@
-use blake2b_simd::Params;
-use cid::Cid;
 use futures::{AsyncRead, AsyncReadExt};
-use multicodec::Codec;
-use multihash::MultihashGeneric;
-use sha2::{Digest, Sha256};
+use libipld::{cid, Multihash};
+use multihash::{MultihashDigest, MultihashGeneric};
 
 use crate::{
     error::{CarDecodeError, HashCode},
     varint::read_varint_u64,
+    Cid,
 };
 
 const CODE_IDENTITY: u64 = 0x00;
@@ -84,59 +82,60 @@ pub(crate) fn assert_block_cid(cid: &Cid, block: &[u8]) -> Result<(), CarDecodeE
     let (hash_fn_name, block_digest) = match cid.hash().code() {
         // TODO: Remove need to copy on .to_vec()
         CODE_IDENTITY => ("identity", block.to_vec()),
-        CODE_SHA2_256 => ("sha2-256", hash_sha2_256(block).to_vec()),
-        CODE_BLAKE2B_256 => ("blake2b-256", hash_blake2b_256(block).to_vec()),
+        CODE_SHA2_256 => ("sha2-256", hash_sha2_256(block).digest().to_vec()),
+        CODE_BLAKE2B_256 => ("blake2b-256", hash_blake2b_256(block).digest().to_vec()),
         code => {
-            let code = match Codec::from_code(code as u16) {
-                Ok(code) => HashCode::Name(code),
-                Err(_) => HashCode::Code(code),
-            };
-            return Err(CarDecodeError::UnsupportedHashCode((code, cid.clone())));
+            return Err(CarDecodeError::UnsupportedHashCode((
+                HashCode::Code(code),
+                *cid,
+            )));
         }
     };
 
     let cid_digest = cid.hash().digest();
+
+    fn to_hex_lower(s: impl AsRef<[u8]>) -> String {
+        s.as_ref()
+            .iter()
+            .map(|i| format!("{i:02x}"))
+            .collect::<Vec<_>>()
+            .as_slice()
+            .join("")
+    }
 
     if cid_digest != block_digest {
         return Err(CarDecodeError::BlockDigestMismatch(format!(
             "{} digest mismatch cid {:?} cid digest {} block digest {}",
             hash_fn_name,
             cid,
-            hex::encode(cid_digest),
-            hex::encode(block_digest)
+            to_hex_lower(cid_digest),
+            to_hex_lower(block_digest),
         )));
     }
 
     Ok(())
 }
 
-fn hash_sha2_256(data: &[u8]) -> [u8; 32] {
-    let mut hasher = Sha256::new();
-    hasher.update(data);
-    hasher.finalize().into()
+fn hash_sha2_256(data: &[u8]) -> Multihash {
+    multihash::Code::Sha2_256.digest(data)
 }
 
-fn hash_blake2b_256(data: &[u8]) -> [u8; 32] {
-    Params::new()
-        .hash_length(32)
-        .to_state()
-        .update(data)
-        .finalize()
-        .as_bytes()
-        .try_into()
-        .unwrap()
+fn hash_blake2b_256(data: &[u8]) -> Multihash {
+    multihash::Code::Blake2b256.digest(data)
 }
 
 #[cfg(test)]
 mod tests {
     use std::io;
 
+    use futures::{executor, io::Cursor};
+    use libipld::cid::{
+        multihash::{Multihash, MultihashGeneric},
+        Cid,
+    };
+
     use super::{assert_block_cid, read_block_cid, read_multihash};
     use crate::{block_cid::CODE_SHA2_256, error::CarDecodeError};
-    use cid::Cid;
-    use futures::executor;
-    use futures::io::Cursor;
-    use multihash::{Multihash, MultihashGeneric};
 
     const CID_V0_STR: &str = "QmUU2HcUBVSXkfWPUc3WUSeCMrWWeEJTuAgR9uyWBhh9Nf";
     const CID_V0_HEX: &str = "12205b0995ced69229d26009c53c185a62ea805a339383521edbed1028c496615448";

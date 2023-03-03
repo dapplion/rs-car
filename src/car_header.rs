@@ -1,15 +1,12 @@
-use cid::Cid;
-use futures::AsyncRead;
-use futures::AsyncReadExt;
+use futures::{AsyncRead, AsyncReadExt};
 
-use crate::carv1_header::decode_carv1_header;
-use crate::carv1_header::CarV1Header;
-use crate::carv2_header::decode_carv2_header;
-use crate::carv2_header::CarV2Header;
-use crate::carv2_header::CARV2_HEADER_SIZE;
-use crate::carv2_header::CARV2_PRAGMA_SIZE;
-use crate::error::CarDecodeError;
-use crate::varint::read_varint_u64;
+use crate::{
+    carv1_header::{decode_carv1_header, CarV1Header},
+    carv2_header::{decode_carv2_header, CarV2Header, CARV2_HEADER_SIZE, CARV2_PRAGMA_SIZE},
+    error::CarDecodeError,
+    varint::read_varint_u64,
+    Cid,
+};
 
 /// Arbitrary high value to prevent big allocations
 const MAX_HEADER_LEN: u64 = 1048576;
@@ -44,33 +41,29 @@ pub(crate) async fn read_car_header<R: AsyncRead + Unpin>(
     let (header, _) = read_carv1_header(r).await?;
 
     match header.version {
-        1 => {
-            return Ok(CarHeader {
-                version: CarVersion::V1,
-                roots: header.roots.ok_or(CarDecodeError::InvalidCarV1Header(
-                    "v1 header has not roots".to_owned(),
-                ))?,
-                characteristics_v2: None,
-                eof_stream: StreamEnd::OnBlockEOF,
-            })
-        }
+        1 => Ok(CarHeader {
+            version: CarVersion::V1,
+            roots: header.roots.ok_or(CarDecodeError::InvalidCarV1Header(
+                "v1 header has not roots".to_owned(),
+            ))?,
+            characteristics_v2: None,
+            eof_stream: StreamEnd::OnBlockEOF,
+        }),
         2 => {
             let (header_v2, (header_v1, header_v1_len)) = read_carv2_header(r).await?;
             let blocks_len = header_v2.data_size as usize - header_v1_len;
-            return Ok(CarHeader {
+            Ok(CarHeader {
                 version: CarVersion::V2,
                 roots: header_v1.roots.ok_or(CarDecodeError::InvalidCarV1Header(
                     "v1 header has not roots".to_owned(),
                 ))?,
                 characteristics_v2: Some(header_v2.characteristics),
                 eof_stream: StreamEnd::AfterNBytes(blocks_len),
-            });
-        }
-        _ => {
-            return Err(CarDecodeError::UnsupportedCarVersion {
-                version: header.version,
             })
         }
+        _ => Err(CarDecodeError::UnsupportedCarVersion {
+            version: header.version,
+        }),
     }
 }
 
@@ -120,7 +113,7 @@ async fn read_carv2_header<R: AsyncRead + Unpin>(
                 padding_len
             )));
         }
-        let mut padding_buf = vec![0u8; padding_len as usize];
+        let mut padding_buf = vec![0u8; padding_len];
         r.read_exact(&mut padding_buf).await?;
     }
 
@@ -132,13 +125,13 @@ async fn read_carv2_header<R: AsyncRead + Unpin>(
 
 #[cfg(test)]
 mod tests {
+    use futures::{executor, io::Cursor};
+
     use super::*;
     use crate::{
         carv1_header::CarV1Header,
         carv2_header::{CARV2_PRAGMA, CARV2_PRAGMA_SIZE},
     };
-    use futures::executor;
-    use futures::io::Cursor;
 
     #[test]
     fn read_carv1_header_v2_pragma() {

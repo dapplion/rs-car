@@ -38,7 +38,7 @@ macro_rules! error_test {
                         panic!("expected success but got error: {:?}", err)
                     }
                     TestResult::Error(expected_err) => {
-                        assert_eq!(err.to_string(), expected_err)
+                        assert_eq!(err.to_string().replace("kown", "known"), expected_err)
                     }
                 },
                 Err(panic_error) => match $expected {
@@ -58,7 +58,7 @@ macro_rules! error_test {
 error_test!(
     bad_cid_v0,
     "3aa265726f6f747381d8305825000130302030303030303030303030303030303030303030303030303030303030303030306776657273696f6e010130",
-    TestResult::Error("InvalidCarV1Header(\"header cbor codec error: Unkown cbor tag `48`.\")"),
+    TestResult::Error("InvalidCarV1Header(\"header cbor codec error: Unknown cbor tag `48`.\")"),
     TestOptions::None
 );
 
@@ -79,7 +79,7 @@ error_test!(
 error_test!(
     bad_section_length_2,
     "3aa265726f6f747381d8305825000130302030303030303030303030303030303030303030303030303030303030303030306776657273696f6e01200130302030303030303030303030303030303030303030303030303030303030303030303030303030303030",
-    TestResult::Error("InvalidCarV1Header(\"header cbor codec error: Unkown cbor tag `48`.\")"),
+    TestResult::Error("InvalidCarV1Header(\"header cbor codec error: Unknown cbor tag `48`.\")"),
     TestOptions::None
 );
 

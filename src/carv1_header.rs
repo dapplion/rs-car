@@ -1,7 +1,4 @@
-use cid::Cid;
-use libipld::prelude::Codec;
-use libipld::Ipld;
-use libipld_cbor::DagCborCodec;
+use libipld::{cbor::DagCborCodec, cid::Cid, prelude::*, Ipld};
 
 use crate::error::CarDecodeError;
 
@@ -18,11 +15,8 @@ pub(crate) struct CarV1Header {
 /// [varint][DAG-CBOR block][varint|CID|block][varint|CID|block]
 /// ```
 pub(crate) fn decode_carv1_header(header: &[u8]) -> Result<CarV1Header, CarDecodeError> {
-    let header: Ipld = DagCborCodec.decode(&header).or_else(|e| {
-        Err(CarDecodeError::InvalidCarV1Header(format!(
-            "header cbor codec error: {:?}",
-            e
-        )))
+    let header: Ipld = DagCborCodec.decode(header).map_err(|e| {
+        CarDecodeError::InvalidCarV1Header(format!("header cbor codec error: {e:?}"))
     })?;
 
     // {"roots": [QmUU2HcUBVSXkfWPUc3WUSeCMrWWeEJTuAgR9uyWBhh9Nf], "version": 1}
@@ -40,7 +34,7 @@ pub(crate) fn decode_carv1_header(header: &[u8]) -> Result<CarV1Header, CarDecod
             let mut roots = Vec::with_capacity(roots_ipld.len());
             for root in roots_ipld {
                 if let Ipld::Link(cid) = root {
-                    roots.push(cid.clone());
+                    roots.push(*cid);
                 } else {
                     return Err(CarDecodeError::InvalidCarV1Header(format!(
                         "roots key elements expected cbor Link but got {:#?}",
@@ -81,11 +75,9 @@ pub(crate) fn decode_carv1_header(header: &[u8]) -> Result<CarV1Header, CarDecod
 
 #[cfg(test)]
 mod tests {
-    use crate::carv2_header::CARV2_PRAGMA;
 
     use super::*;
-    use cid::Cid;
-    use hex;
+    use crate::{carv2_header::CARV2_PRAGMA, *};
 
     #[test]
     fn decode_carv1_header_basic() {
