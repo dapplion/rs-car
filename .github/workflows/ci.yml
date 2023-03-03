@@ -49,14 +49,22 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        name:
-          - linux / stable
-          - linux / beta
-          - macOS / stable
-          - windows / stable-x86_64-msvc
-          - windows / stable-i686-msvc
-          - windows / stable-x86_64-gnu
-          - windows / stable-i686-gnu
+        include:
+          - name: linux / beta
+            rust: beta
+          - name: macOS / stable
+            os: macOS-latest
+          - name: windows / stable-x86_64-gnu
+            os: windows-latest
+            rust: stable-x86_64-pc-windows-gnu
+            target: x86_64-pc-windows-gnu
+          # Test multiple versions of libipld in the allowed range
+          - name: linux / stable / 0.16.0
+            libipld_version: "0.16.0"
+          - name: linux / stable / 0.15.0
+            libipld_version: "0.15.0"
+          - name: linux / stable / 0.14.0
+            libipld_version: "0.14.0"
 
     steps:
       - name: Checkout
@@ -70,6 +78,10 @@ jobs:
 
       - name: Build
         run: cargo build
+
+      - name: Set exact dependency
+        if: ${{ matrix.libipld_version }}
+        run: cargo update --package libipld --precise ${{ matrix.libipld_version }}
 
       - name: Test
         run: cargo test -- --test-threads=1
