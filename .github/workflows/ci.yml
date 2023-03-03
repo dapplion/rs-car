@@ -76,12 +76,12 @@ jobs:
           toolchain: ${{ matrix.rust || 'stable' }}
           targets: ${{ matrix.target }}
 
-      - name: Build
-        run: cargo build
-
       - name: Set exact dependency
         if: ${{ matrix.libipld_version }}
         run: cargo update --package libipld --precise ${{ matrix.libipld_version }}
+
+      - name: Check
+        run: cargo check
 
       - name: Test
         run: cargo test -- --test-threads=1
