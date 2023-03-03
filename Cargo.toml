@@ -17,7 +17,8 @@ path = "src/lib.rs"
 [dependencies]
 futures = "0.3.26"
 libipld = { version = ">=0.14, <0.17", default-features = false, features = ["dag-cbor"] }
-multihash = { version = ">=0.16, <0.19", default-features = false, features = ["blake2b", "sha2"] }
+blake2b_simd = { version = "1.0", default-features = false }
+sha2 = { version = "0.10", default-features = false }
 
 [dev-dependencies]
 async-std = { version = "1.12.0", features = ["attributes"] }
