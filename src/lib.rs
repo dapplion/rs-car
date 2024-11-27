@@ -13,7 +13,7 @@ use std::{
 };
 
 use futures::{future::BoxFuture, AsyncRead, Stream, StreamExt};
-pub use libipld::cid::Cid;
+pub use ipld_core::cid::Cid;
 
 use crate::{
     block_cid::assert_block_cid,
@@ -195,7 +195,7 @@ mod tests {
 
     type ExpectedCid = HashMap<String, String>;
 
-    fn parse_expected_cids(cids: &Vec<ExpectedCid>) -> Vec<Cid> {
+    fn parse_expected_cids(cids: &[ExpectedCid]) -> Vec<Cid> {
         cids.iter().map(parse_expected_cid).collect()
     }
 
