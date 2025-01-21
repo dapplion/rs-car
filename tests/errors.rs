@@ -3,7 +3,7 @@ use rs_car::car_read_all;
 
 enum TestResult {
     Error(&'static str),
-    Success(&'static str),
+    Success,
 }
 
 #[derive(PartialEq)]
@@ -28,13 +28,13 @@ macro_rules! error_test {
 
             match result {
                 Ok(Ok(_)) => match $expected {
-                    TestResult::Success(_) => {} // Ok
+                    TestResult::Success => {} // Ok
                     TestResult::Error(err) => {
                         panic!("expected error but got success: {:?}", err)
                     }
                 },
                 Ok(Err(err)) => match $expected {
-                    TestResult::Success(_) => {
+                    TestResult::Success => {
                         panic!("expected success but got error: {:?}", err)
                     }
                     TestResult::Error(expected_err) => {
@@ -42,7 +42,7 @@ macro_rules! error_test {
                     }
                 },
                 Err(panic_error) => match $expected {
-                    TestResult::Success(_) => panic!("expected panic but got success"),
+                    TestResult::Success => panic!("expected panic but got success"),
                     TestResult::Error(expected_err) => {
                         panic!(
                             "expected error but got panic: {:?} \n {:?}",
@@ -58,7 +58,7 @@ macro_rules! error_test {
 error_test!(
     bad_cid_v0,
     "3aa265726f6f747381d8305825000130302030303030303030303030303030303030303030303030303030303030303030306776657273696f6e010130",
-    TestResult::Error("InvalidCarV1Header(\"header cbor codec error: Unknown cbor tag `48`.\")"),
+    TestResult::Error("InvalidCarV1Header(\"header cbor codec error: DecodeIo(TypeMismatch { name: \\\"CBOR tag\\\", byte: 48 })\")"),
     TestOptions::None
 );
 
@@ -79,7 +79,7 @@ error_test!(
 error_test!(
     bad_section_length_2,
     "3aa265726f6f747381d8305825000130302030303030303030303030303030303030303030303030303030303030303030306776657273696f6e01200130302030303030303030303030303030303030303030303030303030303030303030303030303030303030",
-    TestResult::Error("InvalidCarV1Header(\"header cbor codec error: Unknown cbor tag `48`.\")"),
+    TestResult::Error("InvalidCarV1Header(\"header cbor codec error: DecodeIo(TypeMismatch { name: \\\"CBOR tag\\\", byte: 48 })\")"),
     TestOptions::None
 );
 
@@ -95,7 +95,7 @@ error_test!(
     bad_block_hash_skip_verify,
 //   header                             cid                                                                          data
     "11a265726f6f7473806776657273696f6e 012e0155122001d448afd928065458cf670b60f5a594d735af0172c8d67f22a81680132681ca ffffffffffffffffffff",
-    TestResult::Success(""),
+    TestResult::Success,
     TestOptions::SkipValidateBlockHash
 );
 

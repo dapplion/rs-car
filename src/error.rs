@@ -1,6 +1,6 @@
 use std::io;
 
-use libipld::cid::{self, multihash, Cid};
+use ipld_core::cid::{self, multihash, Cid};
 
 #[derive(Debug)]
 pub enum CarDecodeError {

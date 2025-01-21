@@ -50,6 +50,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - name: linux / stable
           - name: linux / beta
             rust: beta
           - name: macOS / stable
@@ -58,13 +59,6 @@ jobs:
             os: windows-latest
             rust: stable-x86_64-pc-windows-gnu
             target: x86_64-pc-windows-gnu
-          # Test multiple versions of libipld in the allowed range
-          - name: linux / stable / 0.16.0
-            libipld_version: "0.16.0"
-          - name: linux / stable / 0.15.0
-            libipld_version: "0.15.0"
-          - name: linux / stable / 0.14.0
-            libipld_version: "0.14.0"
 
     steps:
       - name: Checkout
@@ -76,15 +70,28 @@ jobs:
           toolchain: ${{ matrix.rust || 'stable' }}
           targets: ${{ matrix.target }}
 
-      - name: Set exact dependency
-        if: ${{ matrix.libipld_version }}
-        run: cargo update --package libipld --precise ${{ matrix.libipld_version }}
-
       - name: Check
         run: cargo check
 
       - name: Test
         run: cargo test -- --test-threads=1
+
+  lints:
+    name: Lints
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: cargo fmt
+        run: cargo fmt --check
+
+      - name: cargo clippy
+        run: cargo clippy --all-features --all-targets -- --deny warnings
 
   docs:
     name: Docs
