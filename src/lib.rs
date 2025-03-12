@@ -75,12 +75,12 @@ where
         validate_block_hash: bool,
     ) -> Result<CarReader<'a, R>, CarDecodeError> {
         let header = read_car_header(r).await?;
-        return Ok(CarReader {
+        Ok(CarReader {
             header,
             read_bytes: 0,
             validate_block_hash,
             decode_header_future: Some(Box::pin(decode_block(r))),
-        });
+        })
     }
 }
 
